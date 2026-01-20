@@ -1,5 +1,5 @@
-# PM2 Ecosystem Configuration
-# File: ecosystem.config.js
+// PM2 Ecosystem Configuration
+// File: ecosystem.config.js
 
 module.exports = {
     apps: [

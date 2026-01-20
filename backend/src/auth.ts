@@ -24,12 +24,12 @@ export const guard = (role?: string) => async (req: any, res: any, next: any) =>
 // Register user (admin or normal)
 authRouter.post("/register", async (req, res) => {
     try {
-        const { username, password, role } = req.body;
+        const { email, password, role } = req.body;
         const hashed = await bcrypt.hash(password, 10);
         const user = await prisma.user.create({
-            data: { username, password: hashed, role }
+            data: { email, password: hashed, role }
         });
-        res.json({ id: user.id, username: user.username, role: user.role });
+        res.json({ id: user.id, email: user.email, role: user.role });
     } catch (error: any) {
         res.status(400).json({ error: error.message });
     }
@@ -38,14 +38,14 @@ authRouter.post("/register", async (req, res) => {
 // Login
 authRouter.post("/login", async (req, res) => {
     try {
-        const { username, password } = req.body;
-        const user = await prisma.user.findUnique({ where: { username } });
+        const { email, password } = req.body;
+        const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return res.status(401).json({ error: "User not found" });
 
         const valid = await bcrypt.compare(password, user.password);
         if (!valid) return res.status(401).json({ error: "Invalid password" });
 
-        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, ENV.JWT_SECRET);
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, ENV.JWT_SECRET);
         res.json({ token, role: user.role });
     } catch (error: any) {
         res.status(400).json({ error: error.message });

@@ -117,7 +117,7 @@ function simulateMarketFeed() {
  * Get current price from cache
  * Helper function for simulation
  */
-function getPrice(symbol) {
+async function getPrice(symbol) {
     const { getPrice: getCachedPrice } = await import("./market.cache.js");
     return getCachedPrice(symbol);
 }

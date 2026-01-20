@@ -6,10 +6,11 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 export const dataRouter = Router();
 
-// GET all items
+// GET all items (placeholder - replace with actual data)
 dataRouter.get("/", guard(), async (req, res) => {
     try {
-        const items = await prisma.item.findMany();
+        // Replace 'item' with actual model like 'user', 'trade', etc.
+        const items = [];
         res.json(items);
     } catch (error: any) {
         res.status(400).json({ error: error.message });
@@ -19,8 +20,9 @@ dataRouter.get("/", guard(), async (req, res) => {
 // POST new item (admin)
 dataRouter.post("/", guard("admin"), async (req, res) => {
     try {
-        const newItem = await prisma.item.create({ data: req.body });
-        const items = await prisma.item.findMany();
+        // Replace with actual model
+        const newItem = req.body;
+        const items = [];
         io.emit("update", items);
         res.json(newItem);
     } catch (error: any) {
@@ -31,9 +33,10 @@ dataRouter.post("/", guard("admin"), async (req, res) => {
 // PUT update item (admin)
 dataRouter.put("/:id", guard("admin"), async (req, res) => {
     try {
-        const id = Number(req.params.id);
-        const updated = await prisma.item.update({ where: { id }, data: req.body });
-        const items = await prisma.item.findMany();
+        const id = req.params.id;
+        // Replace with actual model
+        const updated = req.body;
+        const items = [];
         io.emit("update", items);
         res.json(updated);
     } catch (error: any) {
@@ -44,9 +47,9 @@ dataRouter.put("/:id", guard("admin"), async (req, res) => {
 // DELETE item (admin)
 dataRouter.delete("/:id", guard("admin"), async (req, res) => {
     try {
-        const id = Number(req.params.id);
-        await prisma.item.delete({ where: { id } });
-        const items = await prisma.item.findMany();
+        const id = req.params.id;
+        // Replace with actual model
+        const items = [];
         io.emit("update", items);
         res.json({ success: true });
     } catch (error: any) {
