@@ -18,6 +18,8 @@ model User {
   
   wallet       Wallet?
   transactions Transaction[]
+  trades       Trade[]
+  binaryTrades BinaryTrade[]
 }
 
 model Wallet {
@@ -54,6 +56,46 @@ model Admin {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Trade {
+  id        String      @id @default(uuid())
+  userId    String
+  symbol    String
+  type      String      // "LONG" or "SHORT"
+  amount    Decimal     @db.Decimal(20, 8)
+  entry     Decimal     @db.Decimal(20, 8)
+  exit      Decimal?    @db.Decimal(20, 8)
+  status    TradeStatus @default(OPEN)
+  pnl       Decimal?    @db.Decimal(20, 8)
+  createdAt DateTime    @default(now())
+  closedAt  DateTime?
+  
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+}
+
+model BinaryTrade {
+  id        String   @id @default(uuid())
+  userId    String
+  symbol    String
+  direction String   // "UP" or "DOWN"
+  stake     Decimal  @db.Decimal(20, 8)
+  entry     Decimal  @db.Decimal(20, 8)
+  expiry    DateTime
+  exit      Decimal? @db.Decimal(20, 8)
+  result    String?  // "WIN" or "LOSS"
+  payout    Decimal? @db.Decimal(20, 8)
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([expiry])
+  @@index([result])
 }
 
 model AuditLog {
@@ -96,4 +138,10 @@ enum TxStatus {
   REJECTED
   COMPLETED
   FAILED
+}
+
+enum TradeStatus {
+  OPEN
+  CLOSED
+  FORCE_CLOSED
 }
