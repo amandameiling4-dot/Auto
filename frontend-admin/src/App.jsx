@@ -296,4 +296,3 @@ return (
         {data.length === 0 && <p style={{ color: "#666" }}>No items yet. Click "Add Item" to create one.</p>}
     </div>
 );
-}
