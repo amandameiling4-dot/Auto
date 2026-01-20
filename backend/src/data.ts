@@ -10,7 +10,7 @@ export const dataRouter = Router();
 dataRouter.get("/", guard(), async (req, res) => {
     try {
         // Replace 'item' with actual model like 'user', 'trade', etc.
-        const items = [];
+        const items: any[] = [];
         res.json(items);
     } catch (error: any) {
         res.status(400).json({ error: error.message });
