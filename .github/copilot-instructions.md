@@ -404,6 +404,231 @@ market/
 - ✅ **Broadcast** - Socket.IO for live updates to all clients
 - ✅ **Validated** - Price sanity checks (not negative, not stale)
 
+## 5️⃣ TRADING ENGINE (CORE LOGIC)
+
+### Files Structure
+```
+trading/
+├── trade.controller.js  - HTTP request handlers
+├── trade.service.js     - Trade business logic
+└── trade.engine.js      - Trade execution engine
+```
+
+### Core Functions
+
+**placeTrade(userId, tradeData)**
+```javascript
+// Creates a new trade position
+// Validates:
+//   - User wallet has sufficient balance
+//   - Market is open (trading hours)
+//   - Trade size within limits
+//   - User not frozen
+//
+// Creates trade with status: OPEN
+// Locks funds in wallet (increases exposure)
+// Does NOT deduct from balance yet
+// 
+// tradeData: {
+//   symbol: "BTC/USDT",
+//   type: "LONG" | "SHORT",
+//   amount: Decimal,
+//   leverage: number (optional)
+// }
+//
+// ❗ Trades are internal ledger entries, not blockchain transactions
+```
+
+**calculatePnL(trade, marketPrice)**
+```javascript
+// Calculates current profit/loss for open trade
+// Formula:
+//   LONG: (currentPrice - entryPrice) * amount
+//   SHORT: (entryPrice - currentPrice) * amount
+//
+// Used for:
+//   - Live PnL display in user dashboard
+//   - Risk management calculations
+//   - Margin call checks
+//
+// Does NOT update database
+// Returns: { pnl: Decimal, pnlPercentage: number }
+```
+
+**closeTrade(tradeId)**
+```javascript
+// Closes an open trade position
+// Process:
+//   1. Lock final market price
+//   2. Calculate final PnL
+//   3. Set trade status: OPEN → CLOSED
+//   4. Release locked funds (decrease exposure)
+//   5. Update wallet balance (only after validation)
+//   6. Log trade result in AuditLog
+//   7. Emit TRADE_CLOSED Socket.IO event
+//
+// Validation required before wallet update
+// Admin can force-close trades if needed
+```
+
+### Trading Business Rules
+- ✅ Trades are **internal ledger entries** (not blockchain transactions)
+- ✅ Funds locked during open positions (exposure tracking)
+- ✅ Balance updated only on trade close
+- ✅ All trades logged for audit
+- ✅ PnL calculated in real-time
+- ✅ Admin can force-close positions
+- ✅ Market hours enforced
+- ✅ Per-trade and daily limits enforced
+
+## 6️⃣ BINARY OPTIONS MODULE
+
+### Files Structure
+```
+binary/
+├── binary.controller.js  - HTTP request handlers
+├── binary.service.js     - Binary options logic
+└── binary.engine.js      - Resolution engine
+```
+
+### Core Functions
+
+**openBinaryTrade(userId, symbol, direction, amount, expiry)**
+```javascript
+// Opens a binary options position
+// Parameters:
+//   direction: "UP" | "DOWN" (price prediction)
+//   expiry: fixed duration (e.g., 60s, 5min, 1hr)
+//   amount: stake amount
+//
+// Process:
+//   1. Lock entry price (from market cache)
+//   2. Lock stake amount in wallet
+//   3. Set expiry timestamp
+//   4. Create trade with status: PENDING_RESOLUTION
+//
+// User predicts if price will be UP or DOWN at expiry
+// Stake is fully at risk (all or nothing)
+```
+
+**resolveBinaryTrade(tradeId)**
+```javascript
+// Resolves binary option at expiry time
+// System-driven (not user-triggered)
+// 
+// Process:
+//   1. Fetch market price at exact expiry time
+//   2. Compare with entry price
+//   3. Determine WIN or LOSS:
+//      - UP trade: WIN if exitPrice > entryPrice
+//      - DOWN trade: WIN if exitPrice < entryPrice
+//   4. Apply payout rules
+//   5. Update wallet
+//   6. Set status: RESOLVED
+//   7. Log result in AuditLog
+//   8. Emit BINARY_RESOLVED event
+//
+// Resolution is automated by cron job or timer service
+```
+
+**binaryPayoutRules()**
+```javascript
+// Defines payout structure (configured by Master)
+// Standard rules:
+//   WIN: stake + (stake * payoutRate)
+//     Example: $100 stake, 85% payout = $185 return
+//   LOSS: stake lost (returns $0)
+//
+// Payout rate typically 70-95%
+// Rate can be adjusted per symbol or globally
+// House edge built into payout rate
+```
+
+### Binary Options Business Rules
+- ✅ Fixed expiry durations (60s, 5min, 15min, 1hr, etc.)
+- ✅ Direction: UP or DOWN only (no complex predictions)
+- ✅ All-or-nothing payout (no partial wins)
+- ✅ **Resolution is system-driven** (not user-triggered)
+- ✅ Automated resolution at expiry (cron/timer service)
+- ✅ Payout rate configured by Master
+- ✅ Entry and exit prices locked and immutable
+- ✅ Cannot close before expiry (no early exit)
+
+## 7️⃣ AI ARBITRAGE MODULE
+
+### Files Structure
+```
+ai/
+├── ai.controller.js  - HTTP request handlers
+├── ai.engine.js      - AI arbitrage engine
+└── ai.strategy.js    - Trading strategies and algorithms
+```
+
+### Core Functions
+
+**scanMarketOpportunities()**
+```javascript
+// Continuously monitors market for arbitrage opportunities
+// Analyzes:
+//   - Price discrepancies across symbols
+//   - Volatility thresholds
+//   - Correlation patterns
+//   - Liquidity conditions
+//
+// Uses real-time market feeds
+// Runs as background service
+// Identifies potential profitable trades
+//
+// Returns: Array of opportunities with:
+//   { symbol, expectedProfit, confidence, riskLevel }
+```
+
+**simulateArbitrage(trade)**
+```javascript
+// Simulates arbitrage trade before execution
+// Calculates:
+//   - Expected profit (with fees)
+//   - Risk exposure
+//   - Slippage model (price impact)
+//   - Success probability
+//
+// Does NOT execute the trade
+// Used for decision-making
+// Returns: { profit, risk, recommendation: "EXECUTE" | "SKIP" }
+```
+
+**executeAITrade(userId)**
+```javascript
+// Executes AI-identified arbitrage trade
+// Requirements:
+//   - User must opt-in to AI trading
+//   - Admin or system approval required
+//   - Sufficient wallet balance
+//
+// Process:
+//   1. Verify user opt-in status
+//   2. Check admin/system approval
+//   3. Validate wallet balance
+//   4. Execute trade internally
+//   5. Log AI trade in AuditLog
+//   6. Track performance metrics
+//
+// ❗ AI does NOT self-fund
+// ❗ AI does NOT auto-credit balances
+// ❗ All trades use user's wallet balance
+```
+
+### AI Arbitrage Business Rules
+- ✅ **User opt-in required** - Users must enable AI trading
+- ✅ **Admin/system approval** - Not fully automated
+- ✅ **Uses user funds** - AI does not self-fund
+- ✅ **Internal execution** - Trades executed in platform ledger
+- ✅ **No auto-crediting** - Profits/losses settle through normal trade flow
+- ✅ **Performance tracking** - AI success rate monitored
+- ✅ **Risk limits** - Per-trade and daily AI trade limits
+- ✅ **Transparency** - All AI trades visible to user
+- ✅ **Can be disabled** - Master can disable AI module globally
+
 ### New API Module
 1. Create new directory: `src/moduleName/`
 2. Add files: `moduleName.controller.js`, `moduleName.service.js`, `moduleName.routes.js`
