@@ -277,6 +277,300 @@ All mutations trigger `audit.service.js` logging and Socket.IO broadcasts
 1. Add role check in `auth.middleware.js`: `requireRole(['ADMIN', 'MASTER'])`
 2. Use middleware in routes: `router.get('/endpoint', requireRole(['ADMIN']), controller)`
 3. Add frontend route guard in React Router
+
+## Admin Control Process (STEP 6)
+
+### Admin Capabilities
+
+**1. Credit Balance**
+```javascript
+POST /admin/credit
+Body: { userId, amount }
+→ Create CREDIT transaction
+→ Update wallet balance
+→ Log action in AuditLog
+→ Emit socket event: BALANCE_UPDATED
+```
+
+**2. Approve Withdrawal**
+```javascript
+PUT /admin/transaction/:id/approve
+→ Change status: PENDING → APPROVED → COMPLETED
+→ Deduct from wallet balance
+→ Log action in AuditLog
+→ Emit socket event: TX_STATUS_UPDATED
+```
+
+**3. Freeze User**
+```javascript
+PUT /admin/user/:id/freeze
+Body: { reason }
+→ Set user.status = FROZEN
+→ Lock user wallet
+→ Disconnect user sockets
+→ Log action in AuditLog
+→ Emit socket event: USER_FROZEN
+```
+
+**All Admin Actions:**
+- ✅ Logged in `AuditLog` with actorId, actorRole, action, target
+- ✅ Visible to master panel in real-time
+- ✅ Trigger Socket.IO broadcasts
+- ✅ Include metadata (reason, amount, etc.)
+
+## Master Control Process (STEP 7)
+
+### Master Capabilities
+
+**Admin Management**
+```javascript
+POST /master/admin/create
+→ Create new admin account
+→ Log in AuditLog
+
+PUT /master/admin/:id/disable
+→ Set admin.active = false
+→ Revoke admin sessions
+→ Log in AuditLog
+
+GET /master/admin/actions
+→ Fetch all admin actions from AuditLog
+→ Filter by date, admin, action type
+```
+
+**System Control**
+```javascript
+PUT /master/system/maintenance
+→ Enable/disable maintenance mode
+→ Broadcast to all connected clients
+
+PUT /master/system/limits
+Body: { maxWithdrawal, minDeposit }
+→ Update system-wide transaction limits
+→ Store in configuration
+```
+
+**Key Rules:**
+- ✅ Master routes completely isolated (separate router)
+- ✅ Master can see all admin actions in real-time
+- ✅ Master cannot be frozen or disabled by admins
+- ✅ Only one master account (or very limited)
+
+## Real-Time Socket System (STEP 8)
+
+### Socket Authentication & Room Assignment
+
+```javascript
+// sockets/socket.js
+io.use(async (socket, next) => {
+  const token = socket.handshake.auth.token;
+  const user = verifyToken(token);
+  
+  if (!user) return next(new Error('Authentication failed'));
+  
+  socket.userId = user.id;
+  socket.userRole = user.role;
+  
+  // Assign to role-based rooms
+  if (user.role === 'USER') {
+    socket.join(`user:${user.id}`);
+  } else if (user.role === 'ADMIN') {
+    socket.join('admin');
+  } else if (user.role === 'MASTER') {
+    socket.join('master');
+  }
+  
+  next();
+});
+```
+
+### Socket Events
+
+**BALANCE_UPDATED**
+```javascript
+// Triggered by: Credit, withdrawal approval, transfers
+io.to(`user:${userId}`).emit('BALANCE_UPDATED', {
+  userId,
+  newBalance,
+  change,
+  reason
+});
+```
+
+**TX_STATUS_UPDATED**
+```javascript
+// Triggered by: Admin approval/rejection
+io.to(`user:${userId}`).emit('TX_STATUS_UPDATED', {
+  transactionId,
+  newStatus,
+  updatedBy
+});
+```
+
+**USER_FROZEN**
+```javascript
+// Triggered by: Admin freeze action
+io.to(`user:${userId}`).emit('USER_FROZEN', {
+  userId,
+  reason,
+  freezedBy
+});
+// Also disconnect user socket
+io.in(`user:${userId}`).disconnectSockets();
+```
+
+**ADMIN_ACTION**
+```javascript
+// Triggered by: Any admin action
+io.to('master').emit('ADMIN_ACTION', {
+  adminId,
+  action,
+  target,
+  metadata,
+  timestamp
+});
+```
+
+## Frontend Build Order (STEP 9)
+
+### 1️⃣ Public App (frontend-public)
+
+**Pages:**
+1. **Login Page** (`/login`)
+   - Email + password form
+   - JWT token storage
+   - Role validation
+
+2. **Dashboard** (`/`)
+   - Welcome message
+   - Wallet balance (real-time)
+   - Recent transactions
+   - Quick actions
+
+3. **Wallet Page** (`/wallet`)
+   - Current balance
+   - Deposit button
+   - Withdrawal form
+   - Transaction history
+
+4. **Transactions Page** (`/transactions`)
+   - Filterable transaction list
+   - Status badges (PENDING, APPROVED, COMPLETED)
+   - Real-time updates
+
+### 2️⃣ Admin Panel (frontend-admin)
+
+**Pages:**
+1. **Admin Login** (`/admin/login`)
+   - Separate login for admins
+   - Admin role verification
+
+2. **User List** (`/admin/users`)
+   - Searchable user table
+   - Status indicators (ACTIVE/FROZEN)
+   - Quick actions (Credit, Freeze)
+
+3. **Transaction Approvals** (`/admin/transactions`)
+   - Pending transactions list
+   - Approve/Reject buttons
+   - Transaction details modal
+   - Real-time updates
+
+4. **Credit Balance** (`/admin/credit`)
+   - Select user
+   - Enter amount
+   - Add reason
+   - Confirm and execute
+
+### 3️⃣ Master Panel (frontend-master)
+
+**Pages:**
+1. **Master Login** (`/master-admin/login`)
+   - Master credentials only
+   - Highest security
+
+2. **Admin Management** (`/master-admin/admins`)
+   - Admin list with active status
+   - Create new admin
+   - Disable/Enable admins
+   - View admin activity
+
+3. **Audit Logs** (`/master-admin/audit`)
+   - Comprehensive action log
+   - Filter by admin, action, date
+   - Export functionality
+   - Real-time updates
+
+4. **System Status** (`/master-admin/system`)
+   - Active users count
+   - Transaction statistics
+   - System health
+   - Maintenance mode toggle
+
+## Final Build Sequence (STEP 10)
+
+### Implementation Order
+
+**Phase 1: Foundation**
+1. ✅ Setup database (PostgreSQL + Prisma)
+2. ✅ Update schema with all models
+3. ✅ Run migrations
+
+**Phase 2: Core Backend**
+4. Implement authentication system
+   - `auth/auth.service.js` - Register, login, token generation
+   - `auth/auth.middleware.js` - JWT verification, role guards
+   - `utils/hash.js` - bcrypt password hashing
+   - `utils/token.js` - JWT sign/verify
+
+5. Implement user + wallet system
+   - `users/user.service.js` - CRUD operations
+   - `wallets/wallet.service.js` - Balance management
+   - Auto-create wallet on user registration
+
+6. Implement transaction system
+   - `transactions/tx.service.js` - Create, approve, reject
+   - Transaction status workflow
+   - Balance validation
+
+**Phase 3: Admin & Master**
+7. Implement admin controls
+   - `admin/admin.service.js` - Credit, approve, freeze
+   - Audit logging integration
+   - Permission checks
+
+8. Implement master controls
+   - `master/master.service.js` - Admin management
+   - System configuration
+   - Audit log queries
+
+**Phase 4: Real-Time**
+9. Add Socket.IO system
+   - `sockets/socket.js` - Connection, authentication
+   - `sockets/events.js` - Event definitions
+   - Room-based broadcasting
+   - Integrate with services
+
+**Phase 5: Frontend**
+10. Build frontend applications
+    - Public app (React)
+    - Admin panel (React)
+    - Master panel (React)
+    - Socket.IO client integration
+
+**Phase 6: Testing & Deployment**
+11. QA test flows
+    - User registration → deposit → withdrawal
+    - Admin credit → approve → freeze
+    - Master admin management
+    - Real-time event verification
+
+12. Deploy to production
+    - Environment setup
+    - Database migration
+    - Nginx configuration
+    - SSL certificates
+    - PM2 process management
 - POST `/data/` - requires admin (`guard("admin")`), creates via `prisma.item.create()`, emits "update" with all items
 - PUT `/data/:id` - requires admin, updates via `prisma.item.update()`, emits "update" with all items
 - DELETE `/data/:id` - requires admin, deletes via `prisma.item.delete()`, emits "update" with all items
