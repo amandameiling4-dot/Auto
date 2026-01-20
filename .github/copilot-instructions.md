@@ -629,6 +629,197 @@ ai/
 - ✅ **Transparency** - All AI trades visible to user
 - ✅ **Can be disabled** - Master can disable AI module globally
 
+## 8️⃣ TRANSACTION & SETTLEMENT MODULE
+
+### Files Structure
+```
+transactions/
+├── tx.controller.js  - HTTP request handlers
+└── tx.service.js     - Transaction business logic
+```
+
+### Core Functions
+
+**createTransaction(userId, type, amount)**
+```javascript
+// Creates a new transaction record
+// Types: DEPOSIT, WITHDRAWAL, CREDIT, DEBIT, TRANSFER
+// Initial status: PENDING
+//
+// Process:
+//   1. Validate user exists and is not frozen
+//   2. Validate amount (positive, within limits)
+//   3. Create transaction record with metadata
+//   4. For WITHDRAWAL: check sufficient balance
+//   5. Log transaction creation
+//   6. Emit TX_CREATED event
+//
+// Returns: { id, userId, type, amount, status: PENDING }
+//
+// ❗ Transaction does NOT update balance immediately
+// ❗ Balance updates only after approval
+```
+
+**approveTransaction(txId, adminId)**
+```javascript
+// Approves a pending transaction
+// Only ADMIN or MASTER can approve
+//
+// Process:
+//   1. Fetch transaction (must be PENDING)
+//   2. Validate admin permissions
+//   3. Update status: PENDING → PROCESSING → APPROVED → COMPLETED
+//   4. Trigger wallet update based on type:
+//      - DEPOSIT/CREDIT: increase balance
+//      - WITHDRAWAL/DEBIT: decrease balance
+//   5. Log approval in AuditLog
+//   6. Emit TX_APPROVED event to user
+//   7. Emit ADMIN_ACTION event to master
+//
+// All wallet updates happen HERE
+// Returns: { transactionId, status: COMPLETED, newBalance }
+```
+
+**rejectTransaction(txId, adminId, reason)**
+```javascript
+// Rejects a pending transaction
+// Only ADMIN or MASTER can reject
+//
+// Process:
+//   1. Fetch transaction (must be PENDING)
+//   2. Validate admin permissions
+//   3. Update status: PENDING → REJECTED
+//   4. Store rejection reason in metadata
+//   5. Log rejection in AuditLog
+//   6. Emit TX_REJECTED event to user
+//   7. Emit ADMIN_ACTION event to master
+//
+// NO balance change occurs
+// User notified with reason
+```
+
+### Transaction Settlement Business Rules
+- ✅ **All settlements** go through this module (no direct wallet updates)
+- ✅ **Two-step process**: Create (PENDING) → Approve/Reject (COMPLETED/REJECTED)
+- ✅ **Admin approval required** for withdrawals and manual credits
+- ✅ **Automatic logging** of all transaction state changes
+- ✅ **Real-time notifications** to users and admins
+- ✅ **Rejection requires reason** for transparency
+- ✅ **Balance updates atomic** with transaction approval
+- ✅ **Transaction history immutable** once completed
+
+## 9️⃣ ADMIN CONTROL MODULE
+
+### Files Structure
+```
+admin/
+├── admin.controller.js  - HTTP request handlers
+└── admin.service.js     - Admin business logic
+```
+
+### Admin Capabilities
+
+**User Management**
+
+**freezeUser(userId, adminId, reason)**
+```javascript
+// Freezes user account
+// Process:
+//   1. Set user.status = FROZEN
+//   2. Lock user wallet (wallet.locked = true)
+//   3. Close all open trades (force close)
+//   4. Disconnect user sockets
+//   5. Log action in AuditLog
+//   6. Emit USER_FROZEN event
+//   7. Emit ADMIN_ACTION to master
+//
+// User can login but cannot trade or withdraw
+// Can view balance and transaction history (read-only)
+```
+
+**lockWallet(userId, adminId, reason)**
+```javascript
+// Locks user wallet without freezing account
+// Prevents trading and withdrawals
+// User can still view data
+```
+
+**adjustLimits(userId, adminId, newLimits)**
+```javascript
+// Updates user-specific limits
+// Limits: { maxTradeSize, dailyWithdrawal, maxLeverage }
+// Logged in AuditLog
+```
+
+**Trade Oversight**
+
+**viewLiveTrades(filters)**
+```javascript
+// Returns all open trades across all users
+// Filters: { userId, symbol, type, minAmount }
+// Real-time PnL calculations
+// Used for risk monitoring
+```
+
+**forceCloseTrade(tradeId, adminId, reason)**
+```javascript
+// Forcefully closes an open trade
+// Reasons: Risk management, suspicious activity, margin call
+// Process:
+//   1. Lock current market price
+//   2. Calculate final PnL
+//   3. Close trade (status: FORCE_CLOSED)
+//   4. Update wallet balance
+//   5. Log in AuditLog with reason
+//   6. Notify user
+//   7. Emit ADMIN_ACTION to master
+```
+
+**approveWithdrawal(txId, adminId)**
+```javascript
+// Approves pending withdrawal transaction
+// Calls approveTransaction() in tx.service.js
+// Additional validation:
+//   - User not frozen
+//   - Sufficient balance
+//   - Within daily limits
+//   - No suspicious activity flags
+```
+
+**Market Control**
+
+**pauseSymbol(symbol, adminId, reason)**
+```javascript
+// Temporarily disables trading for a symbol
+// Reasons: High volatility, system maintenance, feed issues
+// Process:
+//   1. Set symbol status: PAUSED
+//   2. Reject new trades for this symbol
+//   3. Allow closing existing positions
+//   4. Log action
+//   5. Broadcast to all users
+//
+// Can be unpaused by admin or master
+```
+
+**disableProduct(product, adminId, reason)**
+```javascript
+// Disables entire product (e.g., binary options)
+// Stronger than pause (affects multiple symbols)
+// Requires master approval for re-enabling
+```
+
+### Admin Control Business Rules
+- ✅ **Every action logged** in AuditLog with actorId, action, target, reason
+- ✅ **Real-time events** emitted to affected users and master panel
+- ✅ **Reason required** for all user-impacting actions
+- ✅ **Visible to master** - All admin actions appear in master panel
+- ✅ **Cannot freeze master** - Master accounts immune to admin actions
+- ✅ **Cannot modify master limits** - Master has unlimited permissions
+- ✅ **Force-close requires reason** - Logged for compliance
+- ✅ **Market controls** require notification to all affected users
+- ✅ **Reversible actions** - Master can undo admin freezes/locks
+
 ### New API Module
 1. Create new directory: `src/moduleName/`
 2. Add files: `moduleName.controller.js`, `moduleName.service.js`, `moduleName.routes.js`
