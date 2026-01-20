@@ -3,6 +3,38 @@ import { getMarketPrice } from "../market/market.service.js";
 import { getIO } from "../sockets/socket.js";
 
 /**
+ * Opens a new binary options trade
+ */
+export async function openBinary(userId, symbol, direction, stake, expiry) {
+    await prisma.binaryTrade.create({
+        data: { userId, symbol, direction, stake, expiry }
+    });
+}
+
+/**
+ * Resolves a binary options trade that has reached expiry
+ */
+export async function resolveBinary(tradeId) {
+    const t = await prisma.binaryTrade.findUnique({ where: { id: tradeId } });
+    const price = getMarketPrice(t.symbol);
+    const win =
+        (t.direction === "UP" && price > t.entry) ||
+        (t.direction === "DOWN" && price < t.entry);
+
+    await prisma.binaryTrade.update({
+        where: { id: tradeId },
+        data: { result: win ? "WIN" : "LOSS" }
+    });
+
+    if (win) {
+        await prisma.wallet.update({
+            where: { userId: t.userId },
+            data: { balance: { increment: t.stake * 1.8 } }
+        });
+    }
+}
+
+/**
  * Resolve binary trade at expiry
  * System-driven, not user-triggered
  * Determines WIN/LOSS based on actual market price

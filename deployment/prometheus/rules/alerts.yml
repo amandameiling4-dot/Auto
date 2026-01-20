@@ -1,0 +1,142 @@
+groups:
+  - name: onchainweb_critical_alerts
+    interval: 30s
+    rules:
+      # API Down
+      - alert: APIDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend API is down"
+          description: "Backend API has been down for more than 1 minute."
+
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors/sec (threshold: 0.05)"
+
+      # Database Connection Failure
+      - alert: DatabaseConnectionFailure
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection failure"
+          description: "Cannot connect to PostgreSQL database for 2+ minutes"
+
+      # Market Feed Disconnected
+      - alert: MarketFeedDisconnected
+        expr: market_feed_status == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Market feed disconnected"
+          description: "Market data feed {{ $labels.feed_name }} has been disconnected"
+
+      # Wallet Balance Mismatch (suspicious)
+      - alert: WalletBalanceMismatch
+        expr: abs(delta(wallet_balance_total[5m])) > 10000
+        labels:
+          severity: critical
+        annotations:
+          summary: "Large wallet balance change detected"
+          description: "Wallet balance changed by {{ $value }} in 5 minutes"
+
+      # Trade Settlement Failure
+      - alert: TradeSettlementFailure
+        expr: rate(trade_operations_total{status="failed"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trade settlement failures detected"
+          description: "{{ $value }} trade settlements failing per second"
+
+      # Admin Abuse Pattern (too many actions)
+      - alert: AdminAbusePattern
+        expr: rate(admin_actions_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusual admin activity detected"
+          description: "Admin {{ $labels.admin_id }} performing {{ $value }} actions/sec"
+
+      # High Failed Login Attempts
+      - alert: HighFailedLoginAttempts
+        expr: rate(failed_login_attempts_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of failed login attempts"
+          description: "{{ $value }} failed login attempts per second"
+
+      # Database Connection Pool Exhausted
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_connection_pool_size{status="active"} / db_connection_pool_size{status="total"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: "{{ $value }}% of connection pool in use"
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is at {{ $value }}%"
+
+      # High CPU Usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is at {{ $value }}%"
+
+      # Disk Space Low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Only {{ $value }}% disk space remaining"
+
+      # High Response Time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API response time"
+          description: "95th percentile response time is {{ $value }}s"
+
+      # Too Many Open Trades
+      - alert: TooManyOpenTrades
+        expr: trades_open_count > 1000
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High number of open trades"
+          description: "{{ $value }} trades currently open (review risk exposure)"

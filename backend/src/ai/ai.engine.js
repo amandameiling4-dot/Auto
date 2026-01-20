@@ -1,6 +1,18 @@
 import { getMarketPrice } from "../market/market.service.js";
 
 /**
+ * Detects arbitrage opportunities between exchanges
+ */
+export function detectArb(symbol) {
+    const a = getMarketPrice(symbol, "A");
+    const b = getMarketPrice(symbol, "B");
+    if (Math.abs(a - b) > 0.25) {
+        return { buy: Math.min(a, b), sell: Math.max(a, b) };
+    }
+    return null;
+}
+
+/**
  * Detect arbitrage opportunities across multiple price feeds
  * Simulated multi-feed price comparison
  */

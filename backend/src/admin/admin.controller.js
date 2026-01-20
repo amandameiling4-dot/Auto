@@ -3,6 +3,30 @@ import { emitBalanceUpdate, emitAdminAction, emitTradeEvent } from "../sockets/s
 import { EVENTS } from "../sockets/events.js";
 
 /**
+ * Approve transaction (admin manual approval)
+ */
+export async function approveTx(req, res) {
+    try {
+        const tx = await prisma.transaction.findUnique({ where: { id: req.params.id } });
+        if (tx.status !== "PENDING") return res.sendStatus(400);
+
+        await prisma.$transaction([
+            prisma.transaction.update({
+                where: { id: tx.id },
+                data: { status: "APPROVED" }
+            }),
+            prisma.wallet.update({
+                where: { userId: tx.userId },
+                data: { balance: { decrement: tx.amount } }
+            })
+        ]);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+}
+
+/**
  * List all users with wallet and trade information
  */
 export async function listUsers(req, res) {

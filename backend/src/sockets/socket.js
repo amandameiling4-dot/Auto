@@ -1,17 +1,33 @@
 import { Server } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
 import jwt from "jsonwebtoken";
 import { EVENTS } from "./events.js";
 import { getAllMarketPrices } from "../market/market.service.js";
+import { redis } from "../redis/redis.client.js";
+import Redis from "ioredis";
 
 let io;
+let pubClient;
+let subClient;
 
 export function initSocket(server) {
+    // Create separate Redis clients for pub/sub
+    // (required by Redis adapter)
+    pubClient = redis.duplicate();
+    subClient = redis.duplicate();
+
     io = new Server(server, {
         cors: {
             origin: "*",
             methods: ["GET", "POST"]
         }
     });
+
+    // Attach Redis adapter for horizontal scaling
+    // This allows Socket.IO events to work across multiple server instances
+    io.adapter(createAdapter(pubClient, subClient));
+
+    console.log("✅ Socket.IO Redis adapter attached (horizontal scaling enabled)");
 
     // Socket authentication middleware
     io.use((socket, next) => {
@@ -64,6 +80,26 @@ export function getIO() {
         throw new Error("Socket.IO not initialized");
     }
     return io;
+}
+
+/**
+ * Disconnect Socket.IO and Redis clients
+ */
+export async function disconnectSocket() {
+    if (io) {
+        await io.close();
+        console.log("Socket.IO closed");
+    }
+
+    if (pubClient) {
+        await pubClient.quit();
+        console.log("Socket.IO pub client closed");
+    }
+
+    if (subClient) {
+        await subClient.quit();
+        console.log("Socket.IO sub client closed");
+    }
 }
 
 /**

@@ -13,6 +13,7 @@ model User {
   password     String
   role         Role          @default(USER)
   status       Status        @default(ACTIVE)
+  kycStatus    KYCStatus     @default(NOT_STARTED)
   optInAI      Boolean       @default(false)
   aiRiskLevel  String?       // "LOW", "MEDIUM", "HIGH"
   aiMaxStake   Decimal?      @db.Decimal(20, 8)
@@ -24,6 +25,7 @@ model User {
   transactions Transaction[]
   trades       Trade[]
   binaryTrades BinaryTrade[]
+  kyc          KYC?
 }
 
 model Wallet {
@@ -115,6 +117,44 @@ model AuditLog {
   @@index([createdAt])
 }
 
+model KYC {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  status    KYCStatus @default(NOT_STARTED)
+  provider  String?   // "SUMSUB", "ONFIDO", "VERIFF"
+  providerId String?  // External provider reference
+  documents Json?     // Document metadata
+  notes     String?
+  reviewedBy String?  // Admin ID who reviewed
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+}
+
+model AMLCheck {
+  id        String   @id @default(uuid())
+  userId    String
+  checkType String   // "VELOCITY", "ANOMALY", "SANCTIONS", "COUNTRY"
+  severity  String   // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+  result    String   // "PASS", "FAIL", "REVIEW"
+  metadata  Json?    // Check details
+  notes     String?
+  resolvedBy String? // Admin ID who resolved
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+  
+  @@index([userId])
+  @@index([result])
+  @@index([severity])
+  @@index([createdAt])
+}
+
 enum Role {
   USER
   ADMIN
@@ -142,6 +182,13 @@ enum TxStatus {
   REJECTED
   COMPLETED
   FAILED
+}
+
+enum KYCStatus {
+  NOT_STARTED
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum TradeStatus {

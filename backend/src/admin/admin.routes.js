@@ -17,6 +17,7 @@ router.put("/user/:id/unlock-wallet", admin.unlockWallet);
 // Transaction approvals
 router.get("/transactions/pending", admin.getPendingTransactions);
 router.put("/tx/:id/approve", admin.approveTransaction);
+router.put("/tx/:id/approve-tx", admin.approveTx); // Atomic approval
 router.put("/tx/:id/reject", admin.rejectTransaction);
 
 // Balance management
