@@ -1598,3 +1598,883 @@ After deployment, verify functionality:
 - **Security**: Install `fail2ban` to protect against brute-force attacks
 - **HTTPS enforcement**: Add redirect from HTTP to HTTPS in Nginx config
 - **Database**: Use connection pooling and read replicas for scaling
+## 1️⃣2️⃣ AUDIT & LOGGING MODULE
+
+### Files Structure
+```
+audit/
+└── audit.service.js  - Audit logging service
+```
+
+### Core Functions
+
+**logAction(actorId, actorRole, action, target, metadata)**
+```javascript
+// Logs any system action for compliance and oversight
+// Parameters:
+//   actorId: UUID of user/admin/master performing action
+//   actorRole: "USER" | "ADMIN" | "MASTER" | "SYSTEM"
+//   action: Action type (e.g., "LOGIN", "TRADE_OPENED", "USER_FROZEN")
+//   target: Resource affected (userId, tradeId, transactionId, etc.)
+//   metadata: JSON object with additional context
+//
+// Process:
+//   1. Validate all required fields
+//   2. Create AuditLog record with timestamp
+//   3. Store in database (immutable)
+//   4. Return log ID
+//
+// ❗ Logs are IMMUTABLE once created
+// ❗ No update or delete operations allowed
+// ❗ Only master can query audit logs
+//
+// Returns: { logId, timestamp }
+```
+
+**queryAuditLogs(filters, masterId)**
+```javascript
+// Retrieves audit logs based on filters
+// Only accessible to MASTER role
+//
+// Filters: {
+//   actorId: string (optional),
+//   actorRole: string (optional),
+//   action: string (optional),
+//   target: string (optional),
+//   startDate: DateTime (optional),
+//   endDate: DateTime (optional),
+//   limit: number (default: 100),
+//   offset: number (default: 0)
+// }
+//
+// Process:
+//   1. Verify masterId has MASTER role
+//   2. Build Prisma query with filters
+//   3. Fetch logs sorted by timestamp DESC
+//   4. Return paginated results
+//
+// Used for:
+//   - Compliance audits
+//   - Suspicious activity investigation
+//   - Admin performance review
+//   - System behavior analysis
+//
+// Returns: {
+//   logs: Array<AuditLog>,
+//   total: number,
+//   page: number,
+//   hasMore: boolean
+// }
+```
+
+**getLoginAttempts(userId, timeWindow)**
+```javascript
+// Retrieves login attempts for security analysis
+// Parameters:
+//   userId: User to check (optional - if null, returns all)
+//   timeWindow: Duration in minutes (e.g., 60 for last hour)
+//
+// Process:
+//   1. Query AuditLog for action="LOGIN_ATTEMPT"
+//   2. Filter by userId if provided
+//   3. Filter by timestamp within timeWindow
+//   4. Return with success/failure status from metadata
+//
+// Used for:
+//   - Brute force detection
+//   - Suspicious login pattern identification
+//   - User security notifications
+//
+// Returns: Array<{ timestamp, success, ip, userAgent }>
+```
+
+**getTradeHistory(userId, filters)**
+```javascript
+// Retrieves complete trade audit trail for a user
+// Logged Actions: TRADE_OPENED, TRADE_CLOSED, TRADE_FORCE_CLOSED
+//
+// Process:
+//   1. Query AuditLog for trade-related actions
+//   2. Filter by userId
+//   3. Include metadata (symbol, amount, pnl, reason)
+//   4. Sort by timestamp DESC
+//
+// Used for:
+//   - User trade history display
+//   - Performance analysis
+//   - Dispute resolution
+//
+// Returns: Array<{ action, timestamp, tradeDetails }>
+```
+
+**getAdminActions(adminId, filters)**
+```javascript
+// Retrieves all actions performed by specific admin
+// Only accessible to MASTER role
+//
+// Logged Actions:
+//   - USER_FROZEN
+//   - USER_UNFROZEN
+//   - WALLET_LOCKED
+//   - WALLET_UNLOCKED
+//   - TX_APPROVED
+//   - TX_REJECTED
+//   - BALANCE_CREDITED
+//   - TRADE_FORCE_CLOSED
+//   - SYMBOL_PAUSED
+//
+// Process:
+//   1. Verify requester is MASTER
+//   2. Query AuditLog for actorId=adminId, actorRole=ADMIN
+//   3. Apply date range filters
+//   4. Return with target and reason
+//
+// Used for:
+//   - Admin oversight
+//   - Performance evaluation
+//   - Compliance reviews
+//
+// Returns: Array<{ action, target, reason, timestamp }>
+```
+
+**getBalanceChanges(userId, filters)**
+```javascript
+// Retrieves all balance modifications for a user
+// Logged Actions: BALANCE_UPDATED (from all sources)
+//
+// Process:
+//   1. Query AuditLog for action="BALANCE_UPDATED"
+//   2. Filter by target=userId
+//   3. Extract metadata (amount, reason, previous balance, new balance)
+//   4. Sort by timestamp DESC
+//
+// Used for:
+//   - Balance reconciliation
+//   - Dispute resolution
+//   - Fraud detection
+//   - User transparency
+//
+// Returns: Array<{
+//   timestamp,
+//   change: Decimal,
+//   reason: string,
+//   previousBalance: Decimal,
+//   newBalance: Decimal,
+//   actorId: string,
+//   actorRole: string
+// }>
+```
+
+### Logged Event Types
+
+**Authentication Events**
+```javascript
+// LOGIN_ATTEMPT: Every login try (success or failure)
+// Metadata: { success: boolean, ip: string, userAgent: string }
+// Actor: USER | ADMIN | MASTER
+// Target: userId
+
+// SESSION_CREATED: Successful login with JWT issued
+// Metadata: { tokenExpiry: DateTime, deviceInfo: string }
+
+// SESSION_TERMINATED: Logout or token expiry
+// Metadata: { reason: "LOGOUT" | "EXPIRY" | "FORCED" }
+```
+
+**Trading Events**
+```javascript
+// TRADE_OPENED: New position created
+// Metadata: { symbol, type, amount, entryPrice, leverage }
+// Actor: USER | SYSTEM (if AI trade)
+// Target: tradeId
+
+// TRADE_CLOSED: Position closed normally
+// Metadata: { exitPrice, pnl, duration }
+
+// TRADE_FORCE_CLOSED: Admin force-closed position
+// Metadata: { exitPrice, pnl, reason, adminId }
+// Actor: ADMIN | MASTER
+```
+
+**Binary Options Events**
+```javascript
+// BINARY_OPENED: Binary option trade created
+// Metadata: { symbol, direction, amount, expiry, entryPrice }
+// Actor: USER
+// Target: tradeId
+
+// BINARY_RESOLVED: Binary option settled
+// Metadata: { result, exitPrice, payout }
+// Actor: SYSTEM
+```
+
+**Wallet Events**
+```javascript
+// BALANCE_UPDATED: Any balance change
+// Metadata: { change, reason, previousBalance, newBalance }
+// Actor: ADMIN | MASTER | SYSTEM
+// Target: userId
+
+// WALLET_LOCKED: Wallet frozen
+// Metadata: { reason, adminId }
+// Actor: ADMIN | MASTER
+
+// WALLET_UNLOCKED: Wallet unfrozen
+// Metadata: { reason, adminId }
+```
+
+**Transaction Events**
+```javascript
+// TX_CREATED: New transaction request
+// Metadata: { type, amount }
+// Actor: USER
+// Target: transactionId
+
+// TX_APPROVED: Transaction approved
+// Metadata: { type, amount, adminId }
+// Actor: ADMIN | MASTER
+
+// TX_REJECTED: Transaction rejected
+// Metadata: { reason, adminId }
+// Actor: ADMIN | MASTER
+```
+
+**Admin Actions**
+```javascript
+// USER_FROZEN: User account frozen
+// Metadata: { reason, previousStatus }
+// Actor: ADMIN | MASTER
+// Target: userId
+
+// USER_UNFROZEN: User account unfrozen
+// Metadata: { reason }
+// Actor: ADMIN | MASTER
+
+// BALANCE_CREDITED: Manual balance credit
+// Metadata: { amount, reason }
+// Actor: ADMIN | MASTER
+```
+
+**Master Actions**
+```javascript
+// ADMIN_CREATED: New admin account
+// Metadata: { email, permissions }
+// Actor: MASTER
+// Target: adminId
+
+// ADMIN_DISABLED: Admin account disabled
+// Metadata: { reason }
+// Actor: MASTER
+
+// SYSTEM_CONFIG_UPDATED: System settings changed
+// Metadata: { setting, oldValue, newValue }
+// Actor: MASTER
+
+// MAINTENANCE_MODE_ENABLED: System maintenance started
+// Metadata: { reason, estimatedDuration }
+// Actor: MASTER
+
+// EMERGENCY_SHUTDOWN: Critical system shutdown
+// Metadata: { reason, affectedUsers, openTrades }
+// Actor: MASTER
+```
+
+**AI Arbitrage Events**
+```javascript
+// AI_TRADE_EXECUTED: AI arbitrage trade executed
+// Metadata: { symbol, expectedProfit, confidence, userId }
+// Actor: SYSTEM
+// Target: tradeId
+
+// AI_TRADE_APPROVED: Admin approved AI trade
+// Metadata: { tradeId, adminId }
+// Actor: ADMIN | MASTER
+```
+
+### Audit Logging Business Rules
+- ✅ **Immutable** - Logs cannot be edited or deleted (append-only)
+- ✅ **Timestamped** - Every log includes precise timestamp (UTC)
+- ✅ **Master-visible only** - Only MASTER role can query full logs
+- ✅ **User partial access** - Users can see their own trade/transaction logs
+- ✅ **Comprehensive** - Every critical action must be logged
+- ✅ **Metadata-rich** - Include context (reason, amounts, actors)
+- ✅ **Searchable** - Indexed by actorId, action, target, timestamp
+- ✅ **Retention** - Logs retained indefinitely for compliance
+- ✅ **Real-time** - Logs created synchronously before action completes
+- ✅ **Atomic** - Log creation part of database transaction
+
+### Integration with Other Modules
+
+**Called by:**
+- Auth module: Login attempts, session creation
+- Wallet module: Balance updates, wallet locks
+- Transaction module: TX creation, approval, rejection
+- Trading engine: Trade open/close, force close
+- Binary options: Trade open, resolution
+- AI arbitrage: Trade execution, approval
+- Admin module: All admin actions (freeze, credit, approve)
+- Master module: Admin management, system config
+
+**Error Handling:**
+- If audit logging fails, the entire transaction should rollback
+- Critical actions (balance updates, trade closes) cannot complete without audit log
+- Use Prisma transactions to ensure atomicity:
+  ```javascript
+  await prisma.$transaction([
+    prisma.wallet.update({ ... }),
+    prisma.auditLog.create({ ... })
+  ]);
+  ```
+
+## 1️⃣3️⃣ FRONTEND FUNCTIONALITY (SUMMARY)
+
+### Public App (frontend-public)
+
+**Pages & Features:**
+
+**1. Login Page (`/login`)**
+```javascript
+// User authentication interface
+// Features:
+//   - Email + password form
+//   - "Forgot password" link (future)
+//   - Registration link (if enabled)
+//   - JWT token storage in localStorage
+//   - Role validation (must be USER)
+//   - Redirect to dashboard on success
+```
+
+**2. Dashboard (`/`)**
+```javascript
+// User home page after login
+// Components:
+//   - Welcome message with username
+//   - Wallet balance (real-time via Socket.IO)
+//   - Quick stats (open trades, total PnL)
+//   - Recent transactions (last 5)
+//   - Quick actions (Trade, Deposit, Withdraw)
+//   - Market price ticker (live via Socket.IO)
+//
+// Socket Events:
+//   - BALANCE_UPDATED → Update wallet display
+//   - TRADE_OPENED → Update open trades count
+//   - TRADE_CLOSED → Update PnL display
+//   - PRICE_UPDATE → Update ticker
+```
+
+**3. Live Charts (`/charts`)**
+```javascript
+// Real-time market price visualization
+// Features:
+//   - Symbol selector (BTC/USDT, ETH/USDT, etc.)
+//   - Candlestick charts (1m, 5m, 15m, 1h, 4h, 1d)
+//   - Live price updates via Socket.IO
+//   - Technical indicators (optional: MA, RSI, MACD)
+//   - Volume display
+//
+// Data Source: Market data module (Module 4)
+// Updates: PRICE_UPDATE socket event
+```
+
+**4. Trade Placement (`/trade`)**
+```javascript
+// Interface for opening new trades
+// Components:
+//   - Symbol selector
+//   - Trade type selector (LONG/SHORT)
+//   - Amount input (with max balance check)
+//   - Leverage selector (if enabled)
+//   - Current market price display
+//   - Estimated PnL calculator
+//   - "Open Trade" button
+//
+// Validations:
+//   - Sufficient balance
+//   - Within daily limits
+//   - Market is open (trading hours)
+//   - User not frozen
+//
+// API Call: POST /trading/open
+// Socket Event: TRADE_OPENED (on success)
+```
+
+**5. Binary Options (`/binary`)**
+```javascript
+// Binary options trading interface
+// Components:
+//   - Symbol selector
+//   - Direction buttons (UP/DOWN)
+//   - Expiry selector (60s, 5min, 15min, 1hr)
+//   - Stake amount input
+//   - Current price display
+//   - Payout rate display (e.g., "85% profit on win")
+//   - Countdown timer (for active trades)
+//   - "Predict" button
+//
+// Active Trades Display:
+//   - Entry price locked
+//   - Current price (live)
+//   - Time remaining (countdown)
+//   - Potential payout
+//
+// API Call: POST /binary/open
+// Socket Events:
+//   - BINARY_OPENED (on creation)
+//   - BINARY_RESOLVED (on expiry)
+```
+
+**6. AI Opt-in Panel (`/ai`)**
+```javascript
+// AI arbitrage configuration
+// Components:
+//   - AI trading toggle (enable/disable)
+//   - Risk level selector (LOW/MEDIUM/HIGH)
+//   - Max stake per AI trade
+//   - Daily AI trade limit
+//   - AI performance stats (win rate, total profit)
+//   - Recent AI trades history
+//   - Terms & conditions checkbox
+//
+// Features:
+//   - User must explicitly opt-in
+//   - Can disable AI at any time
+//   - View AI trade history
+//   - Transparency in AI decisions
+//
+// API Call: PUT /ai/settings
+// Socket Event: AI_TRADE_EXECUTED (when AI opens trade)
+```
+
+**7. Wallet Page (`/wallet`)**
+```javascript
+// Wallet management interface
+// Components:
+//   - Current balance (large display)
+//   - Available balance (balance - exposure)
+//   - Locked in trades (exposure amount)
+//   - Deposit button (creates DEPOSIT transaction)
+//   - Withdrawal form (amount input + submit)
+//   - Transaction history (paginated)
+//
+// Transaction History:
+//   - Type badges (DEPOSIT/WITHDRAWAL/CREDIT/DEBIT)
+//   - Status badges (PENDING/APPROVED/REJECTED/COMPLETED)
+//   - Amount with color coding (+green, -red)
+//   - Timestamp
+//   - Admin approval indicator
+//
+// API Calls:
+//   - GET /wallet/balance
+//   - POST /transactions/withdraw
+//   - GET /transactions/history
+//
+// Socket Events:
+//   - BALANCE_UPDATED → Update balance display
+//   - TX_STATUS_UPDATED → Update transaction status
+```
+
+**8. Transaction History (`/transactions`)**
+```javascript
+// Detailed transaction log
+// Features:
+//   - Filter by type (ALL/DEPOSIT/WITHDRAWAL/CREDIT/DEBIT)
+//   - Filter by status (ALL/PENDING/APPROVED/REJECTED/COMPLETED)
+//   - Date range filter
+//   - Sortable columns
+//   - Export to CSV (optional)
+//
+// Columns:
+//   - Transaction ID (short)
+//   - Type
+//   - Amount
+//   - Status
+//   - Created At
+//   - Approved/Rejected At
+//   - Admin ID (if approved)
+//
+// Real-time updates via Socket.IO
+```
+
+**9. Open Trades (`/trades`)**
+```javascript
+// View and manage active positions
+// Features:
+//   - List of open trades (LONG/SHORT)
+//   - Entry price
+//   - Current price (live via Socket.IO)
+//   - Current PnL (calculated real-time)
+//   - PnL percentage
+//   - Duration (time since opened)
+//   - "Close" button (triggers closeTrade API)
+//
+// Live Updates:
+//   - PRICE_UPDATE → Recalculate PnL
+//   - TRADE_CLOSED → Remove from list
+//
+// API Call: DELETE /trading/:id (close trade)
+```
+
+### Admin Panel (frontend-admin)
+
+**Pages & Features:**
+
+**1. Admin Login (`/admin/login`)**
+```javascript
+// Separate login for admin access
+// Features:
+//   - Email + password form
+//   - JWT token with ADMIN role
+//   - Role validation (must be ADMIN or MASTER)
+//   - Redirect to admin dashboard
+//   - Security: IP whitelist (optional)
+```
+
+**2. User List (`/admin/users`)**
+```javascript
+// User management interface
+// Components:
+//   - Searchable user table (by email, ID)
+//   - Status indicators (ACTIVE/FROZEN/SUSPENDED)
+//   - Wallet balance display
+//   - Quick actions per user:
+//     * Credit Balance button
+//     * Freeze Account button
+//     * Lock Wallet button
+//     * View Details button
+//
+// Columns:
+//   - User ID
+//   - Email
+//   - Status (badge)
+//   - Balance
+//   - Open Trades
+//   - Last Login
+//   - Actions
+//
+// API Call: GET /admin/users
+// Socket Event: USER_FROZEN (when admin freezes)
+```
+
+**3. Live Trades (`/admin/trades`)**
+```javascript
+// Real-time trade monitoring
+// Features:
+//   - All open trades across all users
+//   - Filter by symbol, user, trade type
+//   - Sort by amount, PnL, duration
+//   - Current PnL (live updates)
+//   - Risk indicators (high leverage, large amounts)
+//   - Force close button (with reason input)
+//
+// Columns:
+//   - Trade ID
+//   - User Email
+//   - Symbol
+//   - Type (LONG/SHORT)
+//   - Amount
+//   - Entry Price
+//   - Current Price
+//   - PnL (live)
+//   - Duration
+//   - Actions (Force Close)
+//
+// API Call: GET /admin/trades/live
+// Socket Events:
+//   - PRICE_UPDATE → Update PnL
+//   - TRADE_OPENED → Add to list
+//   - TRADE_CLOSED → Remove from list
+```
+
+**4. Transaction Approvals (`/admin/transactions`)**
+```javascript
+// Pending transaction review
+// Features:
+//   - List of PENDING transactions
+//   - Filter by type (WITHDRAWAL/DEPOSIT)
+//   - User details display
+//   - Balance verification
+//   - Approve/Reject buttons
+//   - Reason input for rejection
+//
+// Transaction Card:
+//   - User email
+//   - Transaction type
+//   - Amount
+//   - Current user balance
+//   - Requested date
+//   - User status (ACTIVE/FROZEN)
+//   - Action buttons (Approve/Reject)
+//
+// API Calls:
+//   - GET /admin/transactions/pending
+//   - PUT /admin/transactions/:id/approve
+//   - PUT /admin/transactions/:id/reject
+//
+// Socket Events:
+//   - TX_CREATED → Add to pending list
+//   - TX_APPROVED → Remove from list (by another admin)
+```
+
+**5. Credit Balance (`/admin/credit`)**
+```javascript
+// Manual balance adjustment
+// Components:
+//   - User selector (search by email/ID)
+//   - Amount input (positive for credit)
+//   - Reason textarea (required)
+//   - Current balance display
+//   - Preview new balance
+//   - Confirm button
+//
+// Validations:
+//   - Amount must be positive
+//   - Reason required (minimum 10 characters)
+//   - User must be ACTIVE (not frozen)
+//
+// Confirmation Modal:
+//   - "Credit $X to user@email.com?"
+//   - Shows current and new balance
+//   - Requires double confirmation
+//
+// API Call: POST /admin/credit
+// Socket Events:
+//   - BALANCE_UPDATED → User sees updated balance
+//   - ADMIN_ACTION → Master sees admin action
+```
+
+**6. Market Controls (`/admin/market`)**
+```javascript
+// Market and symbol management
+// Features:
+//   - List of all tradeable symbols
+//   - Status indicators (ACTIVE/PAUSED)
+//   - Pause/Resume buttons
+//   - Disable product toggle
+//   - Reason input required
+//
+// Use Cases:
+//   - Pause symbol during high volatility
+//   - Disable binary options temporarily
+//   - Emergency market freeze
+//
+// API Call: PUT /admin/market/pause
+```
+
+### Master Panel (frontend-master)
+
+**Pages & Features:**
+
+**1. Master Login (`/master-admin/login`)**
+```javascript
+// Highest security login
+// Features:
+//   - Master credentials only
+//   - Two-factor authentication (optional)
+//   - JWT token with MASTER role
+//   - IP whitelist enforcement
+//   - Login attempt monitoring
+```
+
+**2. System Settings (`/master-admin/system`)**
+```javascript
+// Global system configuration
+// Sections:
+//
+// Binary Options Settings:
+//   - Default payout rate (70-95%)
+//   - Symbol-specific payout rates
+//   - Available expiry durations
+//   - Max stake limits
+//
+// AI Arbitrage Settings:
+//   - Global enable/disable toggle
+//   - Max trades per day per user
+//   - Max amount per AI trade
+//   - Minimum confidence threshold
+//
+// Trading Hours:
+//   - Market open/close times by symbol
+//   - Timezone configuration
+//   - Holiday schedule
+//
+// Transaction Limits:
+//   - Min/max withdrawal amounts
+//   - Min/max deposit amounts
+//   - Daily withdrawal limits
+//
+// API Call: PUT /master/system/config
+// Socket Event: SYSTEM_CONFIG_UPDATED (broadcasts to all)
+```
+
+**3. Admin Management (`/master-admin/admins`)**
+```javascript
+// Admin account control
+// Components:
+//   - Admin list with active status
+//   - Create new admin button
+//   - Disable/Enable toggles
+//   - View admin activity button
+//   - Last login display
+//
+// Admin Actions Table:
+//   - Recent actions by each admin
+//   - Filter by admin, date range
+//   - Action type (freeze, approve, credit)
+//   - Target users affected
+//   - Timestamp
+//
+// Create Admin Modal:
+//   - Email input
+//   - Password input
+//   - Permissions selector (future)
+//   - Confirm button
+//
+// API Calls:
+//   - GET /master/admins
+//   - POST /master/admins/create
+//   - PUT /master/admins/:id/disable
+//   - GET /master/admins/:id/actions
+```
+
+**4. Audit Review (`/master-admin/audit`)**
+```javascript
+// Comprehensive audit log viewer
+// Features:
+//   - Full audit log access (all events)
+//   - Advanced filters:
+//     * Actor (user/admin/master ID)
+//     * Actor role (USER/ADMIN/MASTER/SYSTEM)
+//     * Action type (dropdown with all event types)
+//     * Target (userId, tradeId, etc.)
+//     * Date range (start/end)
+//   - Export to CSV/JSON
+//   - Real-time log stream (optional)
+//
+// Log Display:
+//   - Timestamp
+//   - Actor (role + ID)
+//   - Action type
+//   - Target resource
+//   - Metadata (expandable JSON viewer)
+//
+// Use Cases:
+//   - Compliance audits
+//   - Suspicious activity investigation
+//   - Admin performance review
+//   - System behavior analysis
+//
+// API Call: GET /master/audit/logs
+// Real-time: ADMIN_ACTION socket event
+```
+
+**5. System Status Dashboard (`/master-admin/dashboard`)**
+```javascript
+// System health and metrics
+// Widgets:
+//
+// Active Users:
+//   - Currently logged in
+//   - Active trades count
+//   - Frozen users count
+//
+// Transaction Stats:
+//   - Pending approvals count
+//   - Approved today
+//   - Rejected today
+//   - Total volume
+//
+// Trade Stats:
+//   - Open trades count
+//   - Total open exposure
+//   - Top traded symbols
+//   - AI trades today
+//
+// System Health:
+//   - Database connection status
+//   - Market feed status
+//   - Socket.IO connections
+//   - Maintenance mode toggle
+//   - Emergency shutdown button
+//
+// API Call: GET /master/system/status
+// Real-time updates via Socket.IO
+```
+
+**6. Emergency Controls (`/master-admin/emergency`)**
+```javascript
+// Critical system controls
+// Features:
+//
+// Maintenance Mode:
+//   - Toggle switch
+//   - Reason input
+//   - Estimated duration
+//   - Affects all users (read-only)
+//
+// Emergency Shutdown:
+//   - Red button with confirmation
+//   - Requires reason
+//   - Force-closes ALL open trades
+//   - Disables all trading operations
+//   - Notifies all admins
+//
+// System Restart:
+//   - Graceful shutdown
+//   - Socket disconnection warnings
+//   - Auto-restart after maintenance
+//
+// API Calls:
+//   - PUT /master/system/maintenance
+//   - POST /master/system/emergency-shutdown
+//
+// Socket Event: SYSTEM_ALERT (critical notifications)
+```
+
+### Frontend Business Rules
+- ✅ **JWT Authentication** - All routes require valid token
+- ✅ **Role-based routing** - Public/Admin/Master separate apps
+- ✅ **Real-time updates** - Socket.IO for live data
+- ✅ **Responsive design** - Mobile-friendly interfaces
+- ✅ **Error handling** - User-friendly error messages
+- ✅ **Loading states** - Skeleton screens during data fetch
+- ✅ **Confirmation modals** - Critical actions require confirmation
+- ✅ **Session management** - Auto-logout on token expiry
+- ✅ **State persistence** - LocalStorage for non-sensitive data
+- ✅ **Accessibility** - WCAG 2.1 AA compliance (future)
+
+### Shared Frontend Components
+
+**Reusable Components:**
+```javascript
+// Button: Primary, Secondary, Danger variants
+// Input: Text, Number, Email with validation
+// Select: Dropdown with search
+// Badge: Status indicators (color-coded)
+// Card: Container with header/body/footer
+// Table: Sortable, filterable, paginated
+// Modal: Confirmation, Info, Form variants
+// Toast: Success, Error, Warning notifications
+// Chart: Candlestick, Line, Bar (using Chart.js or similar)
+// Loader: Spinner, Skeleton, Progress bar
+```
+
+**API Integration Pattern:**
+```javascript
+// frontend-*/src/api.js
+// All API calls centralized
+// Axios interceptors for:
+//   - JWT token injection
+//   - Error handling
+//   - Retry logic
+//   - Loading state management
+```
+
+**Socket.IO Integration:**
+```javascript
+// Connect on login with JWT token
+// Join role-specific rooms
+// Global event listeners in App.jsx
+// Event handlers update React state
+// Auto-reconnect on disconnect
+// State sync on reconnect
+```
