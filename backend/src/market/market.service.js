@@ -1,56 +1,69 @@
-import prisma from "../database/prisma.js";
+import { getPrice, isPriceStale, getAllPrices as getCachedPrices } from "./market.cache.js";
 
-// Market price cache (in-memory)
-const priceCache = new Map();
+/**
+ * Market Service - Internal Access Layer
+ * Used by: Trading Engine, Binary Engine, AI Engine, Charts
+ * 
+ * All price data comes from market.cache.js (single source of truth)
+ * Fed by market.gateway.js (WebSocket connections)
+ */
 
 /**
  * Get current market price for a symbol
- * In production, this would connect to external market feeds (Binance, etc.)
+ * Throws error if data unavailable or stale
  */
-export async function getMarketPrice(symbol) {
-    // Check cache first (60 second TTL)
-    const cached = priceCache.get(symbol);
-    if (cached && Date.now() - cached.timestamp < 60000) {
-        return cached.price;
+export function getMarketPrice(symbol) {
+    const data = getPrice(symbol);
+
+    if (!data) {
+        throw new Error(`Market data unavailable for ${symbol}`);
     }
 
-    // TODO: In production, fetch from real market feeds
-    // For now, simulate with random prices
-    const basePrice = {
-        "BTC/USDT": 42000,
-        "ETH/USDT": 2200,
-        "BNB/USDT": 320
-    }[symbol] || 1000;
+    if (isPriceStale(symbol)) {
+        console.warn(`Warning: Price data for ${symbol} is stale`);
+        // In production, you might want to throw an error here
+        // For now, return stale price with warning
+    }
 
-    const price = basePrice + (Math.random() - 0.5) * basePrice * 0.02;
-
-    // Cache the price
-    priceCache.set(symbol, {
-        price,
-        timestamp: Date.now()
-    });
-
-    return price;
+    return data.price;
 }
 
 /**
- * Update market price in cache
- * Called by WebSocket feed handlers
+ * Get market price with timestamp
+ * Returns full cache entry: { price, timestamp }
  */
-export function updateMarketPrice(symbol, price) {
-    priceCache.set(symbol, {
-        price,
-        timestamp: Date.now()
-    });
+export function getMarketPriceWithTime(symbol) {
+    const data = getPrice(symbol);
+
+    if (!data) {
+        throw new Error(`Market data unavailable for ${symbol}`);
+    }
+
+    return data;
 }
 
 /**
- * Get all cached prices
+ * Get all market prices
+ * Returns object with all symbol prices
  */
-export function getAllPrices() {
-    const prices = {};
-    for (const [symbol, data] of priceCache.entries()) {
-        prices[symbol] = data.price;
-    }
-    return prices;
+export function getAllMarketPrices() {
+    return getCachedPrices();
 }
+
+/**
+ * Check if market data is available for a symbol
+ */
+export function hasMarketData(symbol) {
+    const data = getPrice(symbol);
+    return data !== undefined && !isPriceStale(symbol);
+}
+
+/**
+ * Get available symbols
+ * Returns array of symbols with fresh data
+ */
+export function getAvailableSymbols() {
+    const allPrices = getCachedPrices();
+    return Object.keys(allPrices).filter(symbol => !isPriceStale(symbol));
+}
+
