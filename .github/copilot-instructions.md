@@ -1,94 +1,147 @@
 # Copilot Instructions for Auto
 
 ## Project Overview
-Monorepo web application with TypeScript backend and dual React frontends (public-facing and admin). Backend provides REST APIs, WebSocket connections, and JWT authentication.
+**Single system with three interfaces** sharing one backend, one database, and real-time data synchronization:
+1. **Public App** → onchainweb.app (General user interface)
+2. **Admin Panel** → onchainweb.app/admin (Administrative management)
+3. **Master Panel** → onchainweb.app/master-admin (Top-level control)
+
+Backend provides REST APIs, WebSocket connections, and JWT authentication with role-based access control.
 
 ## Structure
 ```
 backend/
-  ├─ prisma/schema.prisma  - Database schema (User, Item models)
-  ├─ src/                  - Express + TypeScript API server
-  │   ├─ index.ts          - Server entry point
-  │   ├─ app.ts            - Express configuration
-  │   ├─ auth.ts           - Authentication routes
-  │   ├─ data.ts           - Data CRUD routes
-  │   ├─ socket.ts         - Socket.io setup
-  │   ├─ error.ts          - Error handler
-  │   └─ env.ts            - Environment config
-  ├─ .env                  - Environment variables (DATABASE_URL, JWT_SECRET, PORT)
-  ├─ .env.example          - Example environment file
-  ├─ package.json          - Dependencies and scripts
-  └─ tsconfig.json         - TypeScript configuration
-frontend-public/           - Public-facing React app
   ├─ src/
-  │   ├─ main.jsx          - React entry point
-  │   ├─ App.jsx           - Main component
-  │   └─ api.js            - Backend API URL
-  ├─ index.html            - HTML entry
-  └─ package.json          - Dependencies
-frontend-admin/            - Admin dashboard React app
-  ├─ src/
-  │   ├─ main.jsx          - React entry point
-  │   ├─ App.jsx           - Admin CRUD component
-  │   └─ api.js            - Backend API URL
-  ├─ index.html            - HTML entry
-  └─ package.json          - Dependencies
-deploy_onchainweb_env.sh   - Multi-environment deployment script
+  │   ├─ app.js                - Express configuration
+  │   ├─ server.js             - Server entry point
+  │   ├─ env.js                - Environment config
+  │   │
+  │   ├─ database/
+  │   │   ├─ prisma.js         - Prisma client initialization
+  │   │   └─ seed.js           - Database seeding
+  │   │
+  │   ├─ auth/
+  │   │   ├─ auth.controller.js  - Auth request handlers
+  │   │   ├─ auth.service.js     - Auth business logic
+  │   │   ├─ auth.routes.js      - Auth route definitions
+  │   │   └─ auth.middleware.js  - JWT validation & role guards
+  │   │
+  │   ├─ users/
+  │   │   ├─ user.controller.js  - User request handlers
+  │   │   ├─ user.service.js     - User business logic
+  │   │   └─ user.routes.js      - User route definitions
+  │   │
+  │   ├─ wallets/
+  │   │   ├─ wallet.controller.js - Wallet request handlers
+  │   │   ├─ wallet.service.js    - Wallet business logic
+  │   │   └─ wallet.routes.js     - Wallet route definitions
+  │   │
+  │   ├─ transactions/
+  │   │   ├─ tx.controller.js     - Transaction handlers
+  │   │   ├─ tx.service.js        - Transaction logic
+  │   │   └─ tx.routes.js         - Transaction routes
+  │   │
+  │   ├─ admin/
+  │   │   ├─ admin.controller.js  - Admin panel handlers
+  │   │   ├─ admin.service.js     - Admin business logic
+  │   │   └─ admin.routes.js      - Admin route definitions
+  │   │
+  │   ├─ master/
+  │   │   ├─ master.controller.js - Master panel handlers
+  │   │   ├─ master.service.js    - Master business logic
+  │   │   └─ master.routes.js     - Master route definitions
+  │   │
+  │   ├─ audit/
+  │   │   ├─ audit.service.js     - Audit logging service
+  │   │   └─ audit.model.js       - Audit data models
+  │   │
+  │   ├─ sockets/
+  │   │   ├─ socket.js            - Socket.io setup
+  │   │   └─ events.js            - Socket event handlers
+  │   │
+  │   └─ utils/
+  │       ├─ hash.js              - Password hashing (bcrypt)
+  │       ├─ token.js             - JWT generation/validation
+  │       └─ logger.js            - Logging utility
+  │
+  └─ prisma/
+      └─ schema.prisma            - Database models (User, Wallet, Transaction, Admin, AuditLog)
+│
+frontend-public/                  - Public app (onchainweb.app/)
+frontend-admin/                   - Admin panel (onchainweb.app/admin)
+frontend-master/                  - Master panel (onchainweb.app/master-admin)
 ```
 
 ## Architecture Overview
 ```
-                           ┌─────────────────┐
-                           │   Internet /    │
-                           │  Users/Clients  │
-                           └─────────────────┘
-                                     │
-           ┌─────────────────────────┴─────────────────────────┐
-           │                                                   │
-┌─────────────────────┐                               ┌─────────────────────┐
-│ Public App (React)  │                               │ Admin Panel (React)│
-│  frontend-public/   │                               │  frontend-admin/   │
-│  Served via Nginx   │                               │  Served via Nginx  │
-└─────────────────────┘                               └─────────────────────┘
-           │                                                   │
-           │  HTTP/HTTPS + WebSocket                           │
-           └───────────────┐                      ┌────────────┘
-                           │                      │
-                     ┌─────────────┐
-                     │   Nginx     │
-                     │ Reverse     │
-                     │ Proxy + SSL │
-                     └─────────────┘
-                           │
-              ┌────────────┴─────────────┐
-              │ Backend API (Node.js +   │
-              │ Express + Prisma)        │
-              │  Runs via PM2            │
-              └────────────┬─────────────┘
-                           │
-           ┌───────────────┴───────────────┐
-           │                               │
-   PostgreSQL Database                Socket.IO Server
-   (Persistent Storage)               (Real-time updates)
-           │                               │
-           └───────────────┬───────────────┘
-                           │
-                   Real-time events
-           (Admin adds/edits/deletes → Public app updates)
+                              ┌─────────────────┐
+                              │   Internet /    │
+                              │  Users/Clients  │
+                              └─────────────────┘
+                                      │
+        ┌─────────────────────────────┼─────────────────────────────┐
+        │                             │                             │
+┌───────────────┐           ┌───────────────┐           ┌───────────────┐
+│  Public App   │           │ Admin Panel   │           │ Master Panel  │
+│ onchainweb.   │           │ /admin        │           │/master-admin  │
+│   app         │           │               │           │               │
+└───────────────┘           └───────────────┘           └───────────────┘
+        │                             │                             │
+        │                             │                             │
+        └─────────────────────────────┼─────────────────────────────┘
+                                      │
+                              HTTP/HTTPS + WebSocket
+                                      │
+                              ┌───────────────┐
+                              │   Nginx       │
+                              │ Reverse Proxy │
+                              │ Path-based    │
+                              │ Routing + SSL │
+                              └───────────────┘
+                                      │
+                       ┌──────────────┴──────────────┐
+                       │ Backend API (Node.js +      │
+                       │ Express + Prisma)           │
+                       │ Runs via PM2                │
+                       │ THREE ROLE SYSTEM:          │
+                       │ - user (public)             │
+                       │ - admin (admin panel)       │
+                       │ - master (master panel)     │
+                       └──────────────┬──────────────┘
+                                      │
+                  ┌───────────────────┴───────────────┐
+                  │                                   │
+          PostgreSQL Database                 Socket.IO Server
+          (Persistent Storage)                (Real-time updates)
+          - Users (3 roles)                   - Broadcasts to ALL
+          - Items/Data                        - Role-based filtering
+                  │                                   │
+                  └───────────────────┬───────────────┘
+                                      │
+                           Real-time events
+              (Master/Admin actions → All panels update)
 ```
 
 **Key components**:
-- **Nginx**: Serves both frontends on separate subdomains, proxies WebSocket, handles SSL/HTTPS
+- **Single Domain**: All three interfaces served from onchainweb.app with path-based routing
+- **Three User Roles**: user (public), admin (admin panel), master (master panel)
+- **Nginx**: Path-based routing (/, /admin, /master-admin), WebSocket proxy, SSL/HTTPS
 - **Backend**: Node.js + Express + Prisma running via PM2 for auto-restart and uptime
-- **Database**: PostgreSQL for persistent storage of users and items
-- **Real-time**: Socket.io integrated - admin actions instantly update public app
+- **Database**: PostgreSQL for persistent storage of users and items (single shared database)
+- **Real-time**: Socket.io integrated - master/admin actions instantly update all connected panels
 - **Deployment**: Script automates full setup (database, PM2, Nginx, SSL) with multi-environment support
 
 ## Development Workflow
-Each package runs independently:
-- **Backend**: 
-  1. Set up `.env` with `DATABASE_URL`, `JWT_SECRET`, `PORT`
-  2. `cd backend && npm install`
+Each package runs independently: on port 5173)
+- **Admin Frontend**: `cd frontend-admin && npm install && npm run dev` (Vite dev server on port 5174)
+- **Master Frontend**: `cd frontend-master && npm install && npm run dev` (Vite dev server on port 5175)
+
+Start backend first, then all three frontends connect via `api.js` modules to `http://localhost:4000`.
+
+**Three-Role System:**
+- **user** - Public app access (read-only)
+- **admin** - Admin panel access (CRUD operations)
+- **master** - Master panel access (full system control + user/admin management)
   3. `npm run prisma:generate` (generates Prisma client)
   4. `npm run prisma:migrate` (runs migrations)
   5. `npm run dev` (ts-node-dev with hot reload on port 4000)
@@ -138,22 +191,92 @@ Scripts: `npm run dev` (Vite dev server), `npm run build`, `npm run preview`
   - Delete: DELETE `/data/:id`
   - Real-time sync via Socket.io, renders items in `<ul>` with inline edit/delete buttons
 
-## Key Conventions
+## Tech Stack
+
+### Backend
+- **Node.js** - Runtime environment
+- **Express** - Web framework
+- **Prisma ORM** - Database toolkit and query builder
+- **PostgreSQL** - Relational database
+- **Socket.IO** - Real-time bidirectional communication
+- **JWT** - JSON Web Tokens for authentication
+- **bcrypt** - Password hashing
+
+### Frontend
+- **Reacbase Models & Relationships
+- **User**: Core user model with email, password, role (USER/ADMIN/MASTER), status (ACTIVE/FROZEN/SUSPENDED)
+- **Wallet**: One-to-one with User, stores balance (Decimal 20,8), locked status
+- **Transaction**: Many-to-one with User, tracks DEPOSIT/WITHDRAWAL/CREDIT/DEBIT/TRANSFER operations
+- **Admin**: Separate admin accounts with active status
+- **AuditLog**: Tracks all actions by actorId, actorRole, action, target, metadata
+
+### Service Pattern Examples
+**User Service** (`user.service.js`):
+- `getUsers()` - Fetch all users with optional filters
+- `getUserById(id)` - Get single user with wallet
+- `updateUserStatus(id, status)` - Update user status (ACTIVE/FROZEN)
+- `deleteUser(id)` - Soft delete or hard delete user
+
+**Wallet Service** (`wallet.service.js`):
+- `createWallet(userId)` - Auto-create wallet on user registration
+- `getBalance(userId)` - Get current wallet balance
+- `lockWallet(userId)` - Freeze wallet (prevent transactions)
+- `unlockWallet(userId)` - Unfreeze wallet
+
+**Transaction Service** (`tx.service.js`):
+- `createTransaction(userId, type, amount)` - Create new transaction
+- `approveTransaction(txId, actorId)` - Admin/Master approve
+- `rejectTransaction(txId, actorId)` - Admin/Master reject
+- `getTransactionHistory(userId, filters)` - Get user transactions
+
+All mutations trigger `audit.service.js` logging and Socket.IO broadcasts
+3. **Services** contain business logic, interact with Prisma
+4. **Middleware** handles authentication, authorization, validation
 
 ### Authentication Flow
-1. **Register**: POST `/auth/register` with `{ username, password, role }` - hashes password with bcrypt (10 rounds)
-2. **Login**: POST `/auth/login` with `{ username, password }` - validates credentials, returns `{ token, role }`
+1. **Register**: POST `/auth/register` with `{ email, password, role }` - hashes password with bcrypt (10 rounds)
+2. **Login**: POST `/auth/login` with `{ email, password }` - validates credentials, returns `{ token, user }`
 3. Backend uses `bcrypt.compare()` to verify password against hashed value in `User` table
-4. JWT token contains `{ id, username, role }` signed with `ENV.JWT_SECRET`
-5. Token stored in `localStorage.token` (or `localStorage.getItem("token")`) on client
-6. Client sends token via `Authorization: Bearer ${token}` header
-7. Protected routes use `guard()` middleware - returns 401 if missing/invalid token, 403 if role mismatch
-8. Role-specific routes use `guard("admin")` - checks `user.role === "admin"`
+4. JWT toTime Communication (Socket.IO)
+**Backend** (`sockets/socket.js`, `sockets/events.js`):
+- Global `io` instance initialized in `server.js`
+- Connection authentication: Verify JWT token on socket connect
+- Room-based broadcasting: `USER`, `ADMIN`, `MASTER` rooms for role-based events
+- Event types:
+  - `wallet:update` - Balance changes
+  - `transaction:new` - New transaction created
+  - `transaction:status` - Transaction status change
+  - `user:status` - User status change (frozen/unfrozen)
+  - `system:alert` - System-wide notifications
 
-### Data Storage Pattern
-- **Database**: PostgreSQL with Prisma ORM - `PrismaClient` instantiated in each module (`auth.ts`, `data.ts`)
-- **Item model**: `{ id, message, createdAt, updatedAt }` with auto-incrementing id and Prisma timestamps
-- GET `/data/` - requires auth (`guard()`), returns `await prisma.item.findMany()`
+**Frontend** (All three apps):
+- Connect via `io(API, { auth: { token } })` in useEffect
+- Join role-specific room on connection
+
+### New API Module
+1. Create new directory: `src/moduleName/`
+2. Add files: `moduleName.controller.js`, `moduleName.service.js`, `moduleName.routes.js`
+3. Define routes in `moduleName.routes.js` (use `auth.middleware.js` for protection)
+4. Implement controllers (handle req/res, call services)
+5. Implement services (business logic, Prisma queries)
+6. Register routes in `app.js`: `app.use('/api/moduleName', moduleNameRoutes)`
+
+### New Database Model
+1. Add model to `prisma/schema.prisma`
+2. Run `npx prisma migrate dev --name add_model_name`
+3. Run `npx prisma generate`
+4. Create service methods to interact with new model
+5. Add audit logging for model mutations
+
+### New Socket Event
+1. Define event in `sockets/events.js`
+2. Emit from service layer: `io.to('ADMIN').emit('event:name', data)`
+3. Add listener in frontend: `socket.on('event:name', handler)`
+
+### Role-Based Feature
+1. Add role check in `auth.middleware.js`: `requireRole(['ADMIN', 'MASTER'])`
+2. Use middleware in routes: `router.get('/endpoint', requireRole(['ADMIN']), controller)`
+3. Add frontend route guard in React Router
 - POST `/data/` - requires admin (`guard("admin")`), creates via `prisma.item.create()`, emits "update" with all items
 - PUT `/data/:id` - requires admin, updates via `prisma.item.update()`, emits "update" with all items
 - DELETE `/data/:id` - requires admin, deletes via `prisma.item.delete()`, emits "update" with all items

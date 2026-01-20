@@ -1,6 +1,13 @@
 # Auto - Full-Stack Web Application
 
-Monorepo web application with TypeScript backend and dual React frontends (public-facing and admin). Features REST APIs, WebSocket real-time updates, and JWT authentication with PostgreSQL persistence.
+**Single system with three interfaces** sharing one backend, one database, and real-time data:
+- **Public App** → onchainweb.app (User interface)
+- **Admin Panel** → onchainweb.app/admin (Administrative control)
+- **Master Panel** → onchainweb.app/master-admin (Top-level management)
+
+Features REST APIs, WebSocket real-time updates, JWT authentication with 3-tier role-based access control, and PostgreSQL persistence.
+
+> **Note:** The app name will be updated as the project nears completion.
 
 ## 🚀 Quick Start (Development)
 

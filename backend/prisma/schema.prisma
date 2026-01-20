@@ -8,15 +8,92 @@ generator client {
 }
 
 model User {
-  id       Int     @id @default(autoincrement())
-  username String  @unique
-  role     String
-  password String
+  id           String        @id @default(uuid())
+  email        String        @unique
+  password     String
+  role         Role          @default(USER)
+  status       Status        @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  
+  wallet       Wallet?
+  transactions Transaction[]
 }
 
-model Item {
-  id        Int      @id @default(autoincrement())
-  message   String
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  balance   Decimal  @default(0) @db.Decimal(20, 8)
+  locked    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id        String    @id @default(uuid())
+  userId    String
+  type      TxType
+  amount    Decimal   @db.Decimal(20, 8)
+  status    TxStatus  @default(PENDING)
+  metadata  Json?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  actorRole String
+  action    String
+  target    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+enum Role {
+  USER
+  ADMIN
+  MASTER
+}
+
+enum Status {
+  ACTIVE
+  FROZEN
+  SUSPENDED
+}
+
+enum TxType {
+  DEPOSIT
+  WITHDRAWAL
+  CREDIT
+  DEBIT
+  TRANSFER
+}
+
+enum TxStatus {
+  PENDING
+  PROCESSING
+  APPROVED
+  REJECTED
+  COMPLETED
+  FAILED
 }
