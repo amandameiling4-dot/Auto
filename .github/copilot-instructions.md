@@ -820,6 +820,310 @@ admin/
 - ✅ **Market controls** require notification to all affected users
 - ✅ **Reversible actions** - Master can undo admin freezes/locks
 
+## 🔟 MASTER CONTROL MODULE
+
+### Files Structure
+```
+master/
+├── master.controller.js  - HTTP request handlers
+└── master.service.js     - Master business logic
+```
+
+### Master Capabilities
+
+**System Rules**
+
+**setBinaryPayoutRatios(symbol, winRate)**
+```javascript
+// Configures payout structure for binary options
+// Parameters:
+//   symbol: specific trading pair or "ALL" for global
+//   winRate: percentage (e.g., 0.85 for 85% payout)
+//
+// Process:
+//   1. Validate winRate (typically 0.70-0.95)
+//   2. Update system configuration
+//   3. Log change in AuditLog
+//   4. Broadcast SYSTEM_ALERT to all users
+//   5. Apply to new trades (existing trades unchanged)
+//
+// House edge = 1 - winRate
+```
+
+**setAILimits(maxTradesPerDay, maxAmountPerTrade)**
+```javascript
+// Sets global limits for AI arbitrage
+// Parameters:
+//   maxTradesPerDay: maximum AI trades per user per day
+//   maxAmountPerTrade: maximum stake per AI trade
+//
+// Prevents:
+//   - AI overtrading
+//   - Excessive risk exposure
+//   - System abuse
+//
+// Logged in AuditLog
+```
+
+**setTradingHours(markets)**
+```javascript
+// Configures market trading hours
+// Parameters:
+//   markets: { symbol, openTime, closeTime, timezone }
+//
+// Example:
+//   { symbol: "BTC/USDT", open: "00:00", close: "23:59", tz: "UTC" }
+//   { symbol: "US_STOCKS", open: "09:30", close: "16:00", tz: "EST" }
+//
+// Enforced by trading engine
+// Outside hours: trades rejected with "Market closed"
+```
+
+**Admin Governance**
+
+**createAdmin(email, password, permissions)**
+```javascript
+// Creates new admin account
+// Process:
+//   1. Validate email uniqueness
+//   2. Hash password (bcrypt)
+//   3. Create Admin record with active=true
+//   4. Log admin creation in AuditLog
+//   5. Emit ADMIN_CREATED event
+//
+// Permissions can be customized (future enhancement)
+```
+
+**disableAdmin(adminId, masterId, reason)**
+```javascript
+// Disables admin account
+// Process:
+//   1. Set admin.active = false
+//   2. Revoke all active admin sessions (invalidate tokens)
+//   3. Log in AuditLog with reason
+//   4. Emit ADMIN_DISABLED event
+//
+// Admin can no longer login or perform actions
+// Cannot be re-enabled without master intervention
+```
+
+**reviewAdminActions(filters)**
+```javascript
+// Queries AuditLog for admin activity
+// Filters:
+//   - adminId: specific admin
+//   - action: type of action (e.g., "FREEZE_USER")
+//   - dateRange: start and end timestamps
+//   - target: affected userId or resource
+//
+// Returns:
+//   Array of audit logs with full metadata
+//   Sorted by timestamp (newest first)
+//
+// Used for:
+//   - Compliance reviews
+//   - Suspicious activity detection
+//   - Performance monitoring
+```
+
+**System Safety**
+
+**enableMaintenanceMode(reason)**
+```javascript
+// Activates system-wide maintenance mode
+// Process:
+//   1. Set system.maintenanceMode = true
+//   2. Broadcast SYSTEM_ALERT to all connected clients
+//   3. Block new trades (reject with "Under maintenance")
+//   4. Allow viewing data (read-only)
+//   5. Allow closing existing positions
+//   6. Log activation in AuditLog
+//
+// Users see banner: "System under maintenance"
+```
+
+**emergencyShutdown(masterId, reason)**
+```javascript
+// Emergency system shutdown
+// Process:
+//   1. Force-close ALL open trades at current market price
+//   2. Settle all positions
+//   3. Disable all trading operations
+//   4. Disable withdrawals
+//   5. Disconnect all user sockets
+//   6. Log in AuditLog with detailed reason
+//   7. Notify all admins
+//
+// ⚠️ CRITICAL: Only used in severe circumstances
+// Requires master approval + reason
+```
+
+### Master Control Business Rules
+- ✅ **Full system access** - No restrictions on master account
+- ✅ **Cannot be frozen** - Immune to admin freeze actions
+- ✅ **All actions logged** - Complete audit trail
+- ✅ **System configuration** - Can modify payout rates, limits, hours
+- ✅ **Admin oversight** - Create, disable, monitor admins
+- ✅ **Emergency powers** - Maintenance mode, emergency shutdown
+- ✅ **Read-only restrictions during maintenance** - Users can view but not trade
+- ✅ **Reversible admin actions** - Can unfreeze users, unlock wallets
+
+## 1️⃣1️⃣ REAL-TIME SOCKET SYSTEM
+
+### Files Structure
+```
+sockets/
+├── socket.js   - Socket.IO server setup and authentication
+└── events.js   - Event definitions and handlers
+```
+
+### Socket Events
+
+**PRICE_UPDATE**
+```javascript
+// Emitted by: Market data module
+// Frequency: On every price change (real-time)
+// To: All connected clients (public, admin, master)
+// Payload: {
+//   symbol: "BTC/USDT",
+//   price: Decimal,
+//   timestamp: DateTime,
+//   source: "Binance"
+// }
+// Used for: Live charts, trade execution validation
+```
+
+**TRADE_OPENED**
+```javascript
+// Emitted by: Trading engine
+// To: user:{userId} room
+// Payload: {
+//   tradeId: string,
+//   userId: string,
+//   symbol: string,
+//   type: "LONG" | "SHORT",
+//   amount: Decimal,
+//   entryPrice: Decimal,
+//   timestamp: DateTime
+// }
+// Used for: User notification, dashboard update
+```
+
+**TRADE_CLOSED**
+```javascript
+// Emitted by: Trading engine
+// To: user:{userId} room
+// Payload: {
+//   tradeId: string,
+//   userId: string,
+//   exitPrice: Decimal,
+//   pnl: Decimal,
+//   finalBalance: Decimal,
+//   timestamp: DateTime
+// }
+// Used for: User notification, balance update
+```
+
+**BINARY_RESOLVED**
+```javascript
+// Emitted by: Binary options engine
+// To: user:{userId} room
+// Payload: {
+//   tradeId: string,
+//   result: "WIN" | "LOSS",
+//   entryPrice: Decimal,
+//   exitPrice: Decimal,
+//   payout: Decimal,
+//   timestamp: DateTime
+// }
+// Used for: User notification, balance update
+```
+
+**BALANCE_UPDATED**
+```javascript
+// Emitted by: Wallet service
+// To: user:{userId} room
+// Payload: {
+//   userId: string,
+//   newBalance: Decimal,
+//   change: Decimal,
+//   reason: string,
+//   timestamp: DateTime
+// }
+// Used for: Real-time balance display
+```
+
+**ADMIN_ACTION**
+```javascript
+// Emitted by: Admin service
+// To: master room
+// Payload: {
+//   adminId: string,
+//   action: string,
+//   target: string,
+//   metadata: object,
+//   timestamp: DateTime
+// }
+// Used for: Master oversight, audit trail
+```
+
+**SYSTEM_ALERT**
+```javascript
+// Emitted by: Master service
+// To: All connected clients
+// Payload: {
+//   type: "MAINTENANCE" | "EMERGENCY" | "ANNOUNCEMENT",
+//   message: string,
+//   severity: "INFO" | "WARNING" | "CRITICAL",
+//   timestamp: DateTime
+// }
+// Used for: System-wide notifications
+```
+
+### Socket System Characteristics
+
+**Authenticated**
+```javascript
+// All socket connections require JWT token
+// Sent via: socket.handshake.auth.token
+// Verified on connection before joining rooms
+// Invalid token → connection rejected
+```
+
+**Role-Aware**
+```javascript
+// Users join role-specific rooms:
+//   - user:{userId} - Individual user room
+//   - admin - All admins
+//   - master - Master account only
+//
+// Events filtered by role:
+//   - PRICE_UPDATE → broadcast to all
+//   - TRADE_OPENED → only to affected user
+//   - ADMIN_ACTION → only to master
+```
+
+**State-Synchronized**
+```javascript
+// On reconnect:
+//   1. Fetch current wallet balance
+//   2. Fetch open trades
+//   3. Fetch pending transactions
+//   4. Resume real-time updates
+//
+// Ensures UI always shows correct state
+// No data loss on temporary disconnects
+```
+
+### Socket Business Rules
+- ✅ **Authentication required** - No anonymous connections
+- ✅ **Room-based broadcasting** - Events sent to appropriate recipients
+- ✅ **Automatic reconnection** - Client handles disconnects
+- ✅ **State sync on reconnect** - Fetch current state after reconnect
+- ✅ **Event logging** - Critical events logged in AuditLog
+- ✅ **Rate limiting** - Prevent socket spam/abuse
+- ✅ **Graceful shutdown** - Notify users before maintenance
+
 ### New API Module
 1. Create new directory: `src/moduleName/`
 2. Add files: `moduleName.controller.js`, `moduleName.service.js`, `moduleName.routes.js`
