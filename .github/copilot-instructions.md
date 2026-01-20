@@ -270,6 +270,140 @@ All mutations trigger `audit.service.js` logging and Socket.IO broadcasts
 - Connect via `io(API, { auth: { token } })` in useEffect
 - Join role-specific room on connection
 
+## 3️⃣ USER WALLET MODULE
+
+### Files Structure
+```
+wallets/
+├── wallet.controller.js  - HTTP request handlers
+├── wallet.service.js     - Balance operations, wallet logic
+└── wallet.routes.js      - Route definitions
+```
+
+### Core Functions
+
+**getWallet(userId)**
+```javascript
+// Returns complete wallet information
+// Returns: {
+//   id: string,
+//   userId: string,
+//   balance: Decimal,
+//   locked: boolean,
+//   exposure: Decimal,  // Amount in open trades
+//   availableBalance: balance - exposure
+// }
+// Used by: User dashboard, trading checks
+```
+
+**lockWallet(userId)**
+```javascript
+// Sets wallet.locked = true
+// Blocks all trading operations
+// Blocks all withdrawal requests
+// Used by: Admin freeze action, System risk management
+// Returns: { locked: true, reason: string }
+```
+
+**updateBalance(userId, amount, reason)**
+```javascript
+// Updates wallet balance
+// ONLY called by:
+//   1. Admin approval (credit/debit)
+//   2. Trade settlement (profit/loss)
+//   3. System correction (manual adjustment)
+// 
+// ❗ Users NEVER update balance directly
+// ❗ All balance changes logged in AuditLog
+// ❗ Triggers BALANCE_UPDATED Socket.IO event
+//
+// Parameters:
+//   amount: positive (credit) or negative (debit)
+//   reason: "ADMIN_CREDIT" | "TRADE_SETTLEMENT" | "WITHDRAWAL_APPROVED" | etc.
+```
+
+### Wallet Business Rules
+- ✅ One wallet per user (1:1 relationship)
+- ✅ Auto-created on user registration
+- ✅ Balance stored as Decimal(20,8) for precision
+- ✅ Locked wallets cannot trade or withdraw
+- ✅ Exposure tracks funds in open positions
+- ✅ Available balance = balance - exposure
+- ✅ All balance changes require a reason and are audited
+
+## 4️⃣ REAL-TIME MARKET DATA MODULE
+
+### Files Structure
+```
+market/
+├── market.service.js   - Market data logic, feed connections
+├── market.gateway.js   - WebSocket gateway for external feeds
+└── market.cache.js     - In-memory price cache with timestamps
+```
+
+### Core Functions
+
+**connectMarketFeeds()**
+```javascript
+// Connects to external market data sources via WebSocket
+// Sources:
+//   - Crypto price feeds (Binance, Coinbase, etc.)
+//   - FX feeds (forex pairs)
+//   - Indices (optional - S&P 500, NASDAQ, etc.)
+//
+// Maintains persistent WebSocket connections
+// Auto-reconnects on disconnect
+// Handles authentication with feed providers
+```
+
+**normalizePrice(symbol, rawData)**
+```javascript
+// Converts external feed format to internal format
+// Input: Raw data from different providers
+// Output: {
+//   symbol: string,      // e.g., "BTC/USDT"
+//   price: Decimal,      // Current price
+//   timestamp: DateTime,
+//   source: string       // Feed provider name
+// }
+// Handles different timestamp formats
+// Validates price data integrity
+```
+
+**cacheMarketData(symbol, price)**
+```javascript
+// Stores latest price in memory cache
+// Structure: Map<symbol, { price, timestamp }>
+// Used for:
+//   - Fast price lookups during trade execution
+//   - Chart data retrieval
+//   - AI arbitrage calculations
+//
+// Cache expiry: 60 seconds (stale data check)
+```
+
+**emitPriceUpdate(symbol)**
+```javascript
+// Broadcasts price update via Socket.IO
+// Emitted to: All connected clients (public, admin, master)
+// Event: "PRICE_UPDATE"
+// Payload: { symbol, price, timestamp }
+//
+// Used by:
+//   - Real-time charts in user interface
+//   - Trade execution price validation
+//   - AI arbitrage opportunity detection
+```
+
+### Market Data Business Rules
+- ✅ **Read-only** - Market data is never editable by users or admins
+- ✅ **Real-time** - WebSocket feeds for instant updates
+- ✅ **Cached** - In-memory storage for fast access
+- ✅ **Timestamped** - All prices include exact timestamp
+- ✅ **Normalized** - Consistent format across all sources
+- ✅ **Broadcast** - Socket.IO for live updates to all clients
+- ✅ **Validated** - Price sanity checks (not negative, not stale)
+
 ### New API Module
 1. Create new directory: `src/moduleName/`
 2. Add files: `moduleName.controller.js`, `moduleName.service.js`, `moduleName.routes.js`
