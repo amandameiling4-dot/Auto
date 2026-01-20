@@ -1,9 +1,22 @@
-# Auto - Full-Stack Web Application
+# Auto - Custodial Trading Platform
+
+**A full-stack trading platform** with internal wallets, binary options, AI arbitrage, and admin-controlled execution.
+
+## 🎯 Platform Features
+
+- **Internal Custodial Wallets** - Users' funds managed by platform
+- **Binary Options Trading** - Time-based prediction contracts
+- **AI Arbitrage System** - Automated arbitrage detection
+- **Real-time Market Data** - Live price feeds
+- **Admin-Controlled Execution** - All trades require approval
+- **Three-Tier Access Control** - User, Admin, Master roles
+
+## 🏗️ System Architecture
 
 **Single system with three interfaces** sharing one backend, one database, and real-time data:
-- **Public App** → onchainweb.app (User interface)
-- **Admin Panel** → onchainweb.app/admin (Administrative control)
-- **Master Panel** → onchainweb.app/master-admin (Top-level management)
+- **Public App** → onchainweb.app (User trading interface)
+- **Admin Panel** → onchainweb.app/admin (Approve trades, manage users)
+- **Master Panel** → onchainweb.app/master-admin (Admin & system management)
 
 Features REST APIs, WebSocket real-time updates, JWT authentication with 3-tier role-based access control, and PostgreSQL persistence.
 

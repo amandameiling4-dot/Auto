@@ -1,10 +1,25 @@
 # Copilot Instructions for Auto
 
+## 🔹 GLOBAL APP CONCEPT
+
+**This is a custodial trading platform** with the following characteristics:
+
+- **Internal wallets** - Users have custodial wallets managed by the platform
+- **Simulated trading logic** - Trading operations validated by system, not auto-executed
+- **Real-time market feeds** - Live price data for trading instruments
+- **Admin-controlled execution** - Admins approve/reject trades and withdrawals
+- **Master-controlled system** - Master manages admins and system configuration
+- **Binary options trading** - Time-based prediction contracts
+- **AI arbitrage** - Automated arbitrage detection and execution
+- **Real-time updates** - Socket.IO for instant notifications
+
+❗ **Key Business Rule:** Trades are system-validated, not auto-minted, not auto-approved. All critical operations require admin review.
+
 ## Project Overview
 **Single system with three interfaces** sharing one backend, one database, and real-time data synchronization:
-1. **Public App** → onchainweb.app (General user interface)
-2. **Admin Panel** → onchainweb.app/admin (Administrative management)
-3. **Master Panel** → onchainweb.app/master-admin (Top-level control)
+1. **Public App** → onchainweb.app (User trading interface)
+2. **Admin Panel** → onchainweb.app/admin (Trade/withdrawal approvals, user management)
+3. **Master Panel** → onchainweb.app/master-admin (Admin management, system control)
 
 Backend provides REST APIs, WebSocket connections, and JWT authentication with role-based access control.
 
@@ -191,7 +206,9 @@ Scripts: `npm run dev` (Vite dev server), `npm run build`, `npm run preview`
   - Delete: DELETE `/data/:id`
   - Real-time sync via Socket.io, renders items in `<ul>` with inline edit/delete buttons
 
-## Tech Stack
+## Key Conventions
+
+### Architecture Pattern: Controller → Service → Database
 
 ### Backend
 - **Node.js** - Runtime environment
