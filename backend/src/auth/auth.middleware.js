@@ -17,3 +17,6 @@ export function authGuard(roles = []) {
         }
     };
 }
+
+// Alias for backward compatibility
+export const guard = authGuard;
