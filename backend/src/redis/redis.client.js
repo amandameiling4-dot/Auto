@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import { ENV } from "../env.js";
+import { ENV } from "../config/env.js";
 
 // Redis client singleton
 let redisClient = null;

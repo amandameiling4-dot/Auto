@@ -1,11 +1,27 @@
 #!/bin/bash
 # Quick Production Deployment Script
+# Compatible with Ubuntu 22.04 LTS and Ubuntu 24.04 LTS
 # Usage: sudo ./quick_deploy.sh
 
 set -e
 
 echo "🚀 Quick Deploy for OnChainWeb"
 echo "================================"
+
+# Check Ubuntu version
+echo "📋 Checking system..."
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    echo "OS: $NAME $VERSION"
+    if [[ "$ID" != "ubuntu" ]]; then
+        echo "⚠️  Warning: This script is designed for Ubuntu. Your OS: $ID"
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+fi
 
 # Check if PM2 is installed
 if ! command -v pm2 &> /dev/null; then

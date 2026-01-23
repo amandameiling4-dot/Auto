@@ -22,7 +22,7 @@ dataRouter.post("/", guard("admin"), async (req, res) => {
     try {
         // Replace with actual model
         const newItem = req.body;
-        const items = [];
+        const items: any[] = [];
         io.emit("update", items);
         res.json(newItem);
     } catch (error: any) {
@@ -36,7 +36,7 @@ dataRouter.put("/:id", guard("admin"), async (req, res) => {
         const id = req.params.id;
         // Replace with actual model
         const updated = req.body;
-        const items = [];
+        const items: any[] = [];
         io.emit("update", items);
         res.json(updated);
     } catch (error: any) {
@@ -49,7 +49,7 @@ dataRouter.delete("/:id", guard("admin"), async (req, res) => {
     try {
         const id = req.params.id;
         // Replace with actual model
-        const items = [];
+        const items: any[] = [];
         io.emit("update", items);
         res.json({ success: true });
     } catch (error: any) {

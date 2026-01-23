@@ -35,10 +35,13 @@
    - **Best for Asia:** Singapore, Tokyo, Seoul
    - **Pick closest to your target users** for faster loading
 5. **Choose Server Image:**
-   - Operating System: **Ubuntu 22.04 LTS x64**
+   - Operating System: **Ubuntu**
+   - Version: **24.04 LTS x64** ✅ (Recommended - Latest LTS)
+   - Note: 22.04 LTS also works if you prefer, but 24.04 is newer and better
 6. **Choose Server Size:**
-   - Scroll to: **8 GB RAM / 4 vCPUs / 180 GB SSD**
-   - Price: **$48/month**
+   - Look for: **8 GB RAM / 4 vCPUs / 160-180 GB SSD**
+   - Price: **$48/month** (may vary slightly by region)
+   - Plan name might be: "Regular Performance 8GB" or "8GB/4CPU"
    - This is perfect for your trading platform
 7. **Additional Features** (OPTIONAL):
    - ✅ Enable IPv6 (FREE - check this box)
@@ -125,7 +128,8 @@ apt install -y git curl wget nano
 
 # Verify Ubuntu version
 lsb_release -a
-# Should show: Ubuntu 22.04.x LTS
+# Should show: Ubuntu 22.04.x LTS or Ubuntu 24.04.x LTS
+# Both versions work perfectly!
 ```
 
 ### **B. Clone Your Repository**
